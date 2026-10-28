@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amendment Layers — Presenter View</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="presenter.css" />
+</head>
+<body class="waiting">
+  <main id="doc" aria-live="polite"></main>
+  <p id="waiting">Waiting for Word…</p>
+
+  <div id="controls" role="toolbar" aria-label="Presenter view controls">
+    <button type="button" data-cmd="smaller" title="Smaller text (−)">A−</button>
+    <button type="button" data-cmd="larger" title="Larger text (+)">A+</button>
+    <button type="button" data-cmd="legend" title="Show or hide the legend (L)">Legend</button>
+  </div>
+
+  <footer id="legend" aria-label="Legend">
+    <span><b>1</b> Main motion: <span class="a-ins1">inserted</span> <span class="a-del1">struck</span></span>
+    <span><b>2</b> Primary: <span class="a-ins2">inserted</span> <span class="a-del2">struck</span></span>
+    <span><b>3</b> Secondary: <span class="a-ins3">inserted</span> <span class="a-del3">struck</span></span>
+  </footer>
+
+  <script src="presenter.js"></script>
+</body>
+</html>

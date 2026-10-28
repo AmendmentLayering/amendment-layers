@@ -1,0 +1,114 @@
+:root {
+  --size: 34px;
+  --l2: #1f5fbf;
+  --l2-shade: #dce9fa;
+  --l3: #8b1e8b;
+  --l3-shade: #f5ddf5;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: #fff;
+  color: #111;
+  font-family: "Segoe UI", Calibri, Arial, sans-serif;
+}
+
+/* The passage, in large type. Generous top and bottom padding lets the
+   current paragraph sit in the middle of the screen even at the ends. */
+#doc {
+  max-width: 1700px;
+  margin: 0 auto;
+  padding: 40vh 4vw 50vh;
+  font-size: var(--size);
+  line-height: 1.5;
+}
+
+.p { margin: 0 0 0.55em; }
+.p.empty { margin: 0; line-height: 0.6; }
+.p.h1 { font-size: 1.35em; font-weight: 700; }
+.p.h2 { font-size: 1.2em; font-weight: 700; }
+.p.h3, .p.h4, .p.h5, .p.h6 { font-weight: 700; }
+.b { font-weight: 700; }
+.i { font-style: italic; }
+
+/* A quiet bar beside the paragraph being worked on. */
+.p.here { box-shadow: -0.4em 0 0 0 #cfcfcf; }
+
+/* Footnote and endnote numbers; the note being worked on is highlighted. */
+sup.nref { font-size: 0.6em; line-height: 0; padding: 0 0.08em; }
+sup.nref.cur { background: #ffe58a; border-radius: 0.15em; padding: 0.05em 0.2em; }
+
+/* With the cursor in a note: the main-text paragraph holding its number,
+   then the note in a panel below. */
+.ref-para { margin-bottom: 0.7em; }
+.note {
+  border-top: 2px solid #bbb;
+  border-left: 0.3em solid #bbb;
+  background: #f7f7f7;
+  padding: 0.35em 0.8em 0.25em;
+}
+.note-label { font-size: 0.6em; font-weight: 700; color: #555; margin-bottom: 0.2em; }
+.note .p.here { box-shadow: -0.4em 0 0 0 #bdbdbd; }
+
+table.t { border-collapse: collapse; margin: 0 0 0.6em; }
+table.t td { border: 1px solid #bbb; padding: 0.15em 0.4em; vertical-align: top; }
+table.t .p { margin: 0; }
+
+/* Amendment levels, as in the add-in's legend, with heavier lines for a
+   projector. */
+.a-ins1 { text-decoration: underline; text-decoration-thickness: 0.07em; text-underline-offset: 0.12em; }
+.a-del1 { text-decoration: line-through; text-decoration-thickness: 0.07em; }
+.a-ins2 { color: var(--l2); background: var(--l2-shade); text-decoration: underline double; text-decoration-thickness: 0.06em; text-underline-offset: 0.1em; }
+.a-del2 { color: var(--l2); background: var(--l2-shade); text-decoration: line-through double; text-decoration-thickness: 0.06em; }
+.a-ins3 { color: var(--l3); background: var(--l3-shade); font-style: italic; text-decoration: underline dotted; text-decoration-thickness: 0.09em; text-underline-offset: 0.12em; }
+.a-del3 { color: var(--l3); background: var(--l3-shade); font-style: italic; text-decoration: line-through; text-decoration-thickness: 0.07em; }
+
+#waiting {
+  display: none;
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  place-items: center;
+  font-size: 28px;
+  color: #777;
+}
+body.waiting #waiting { display: grid; }
+
+/* Legend along the bottom. */
+#legend {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  gap: 2.5em;
+  padding: 0.4em 1em;
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid #ddd;
+  font-size: max(16px, calc(var(--size) * 0.5));
+}
+body.no-legend #legend { display: none; }
+
+/* Controls: top right, hidden unless the mouse has just moved. */
+#controls {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+body.show-controls #controls { opacity: 1; }
+#controls button {
+  padding: 6px 12px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  font: 600 15px "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+#controls button:hover { border-color: #666; }

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amendment Layers</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="taskpane.css" />
+</head>
+<body>
+  <section aria-labelledby="level-heading">
+    <h1 id="level-heading">Active level</h1>
+    <div class="levels" role="radiogroup" aria-label="Active amendment level">
+      <button type="button" class="level l1" data-level="1" role="radio">1<span>Main motion</span></button>
+      <button type="button" class="level l2" data-level="2" role="radio">2<span>Primary</span></button>
+      <button type="button" class="level l3" data-level="3" role="radio">3<span>Secondary</span></button>
+    </div>
+    <p class="hint">Click a level each time a new amendment is offered.</p>
+  </section>
+
+  <p id="status" class="status" role="status" aria-live="polite">Ready.</p>
+
+  <section aria-labelledby="keys-heading">
+    <h2 id="keys-heading">Amendment Actions</h2>
+    <div class="actions">
+      <button type="button" data-action="markDelete">Strike<kbd data-key="MarkDelete"></kbd></button>
+      <button type="button" data-action="markInsertFromPane">Insert<kbd data-key="MarkInsert"></kbd></button>
+      <button type="button" data-action="adopted" class="adopt">Adopted<kbd data-key="Adopted"></kbd></button>
+      <button type="button" data-action="failed" class="fail">Failed<kbd data-key="Failed"></kbd></button>
+      <button type="button" id="all-places" class="all-places" aria-pressed="false">All places<span>next vote only</span></button>
+    </div>
+    <p class="hint">Adopted / Failed act on the most recent pending amendment at the cursor, in that place only.
+      Click <b>All places</b> first to apply the next one everywhere that amendment is marked.</p>
+  </section>
+
+  <section aria-labelledby="legend-heading">
+    <h2 id="legend-heading">Legend</h2>
+    <table class="legend">
+      <thead><tr><th>Level</th><th>Inserted</th><th>Struck</th></tr></thead>
+      <tbody>
+        <tr><th>1 Main motion</th><td><span class="l1-ins">words</span></td><td><span class="l1-del">words</span></td></tr>
+        <tr><th>2 Primary</th><td><span class="l2-ins">words</span></td><td><span class="l2-del">words</span></td></tr>
+        <tr><th>3 Secondary</th><td><span class="l3-ins">words</span></td><td><span class="l3-del">words</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section aria-labelledby="projector-heading">
+    <h2 id="projector-heading">Projector</h2>
+    <div class="actions">
+      <button type="button" id="presenter" class="all-places" aria-pressed="false">Presenter view<span>window for the projected screen</span></button>
+    </div>
+    <p class="hint">Opens a window, filling this screen, that shows only the document in large type and follows
+      the cursor. Click its title bar and press <b>Windows key + Shift + →</b> (or ←) to move it to the projected
+      screen. Click Presenter view again to close it.</p>
+  </section>
+
+  <script src="ooxml.js"></script>
+  <script src="engine.js"></script>
+  <script src="presenter-host.js"></script>
+  <script src="taskpane.js"></script>
+</body>
+</html>

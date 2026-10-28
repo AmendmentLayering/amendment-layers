@@ -1,0 +1,14 @@
+{
+  "actions": [
+    { "id": "MarkDelete", "type": "ExecuteFunction", "name": "Strike selection at the active amendment level" },
+    { "id": "MarkInsert", "type": "ExecuteFunction", "name": "Insert text at the active amendment level" },
+    { "id": "Adopted", "type": "ExecuteFunction", "name": "Amendment at cursor adopted" },
+    { "id": "Failed", "type": "ExecuteFunction", "name": "Amendment at cursor failed" }
+  ],
+  "shortcuts": [
+    { "action": "MarkDelete", "key": { "default": "Ctrl+Alt+Shift+D", "mac": "Command+Option+Shift+D" } },
+    { "action": "MarkInsert", "key": { "default": "Ctrl+Alt+Shift+I", "mac": "Command+Option+Shift+I" } },
+    { "action": "Adopted", "key": { "default": "Ctrl+Alt+Shift+Y", "mac": "Command+Option+Shift+Y" } },
+    { "action": "Failed", "key": { "default": "Ctrl+Alt+Shift+N", "mac": "Command+Option+Shift+N" } }
+  ]
+}
