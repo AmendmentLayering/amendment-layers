@@ -1,5 +1,14 @@
 # Amendment Layers: Word add-in
 
+**Version 3.** Version 2 with the display revised to match
+`three_layer_amendment_mockup_revised.docx`: struck text appears only once,
+and all text is black at every level. Version 2 is kept unchanged in the
+`amendment-display-addin` folder beside this one, in case it is needed again.
+Version 3 is published the same way as Version 2 (same add-in ID and site),
+so uploading this `web` folder replaces Version 2 for everyone; to go back,
+upload Version 2's `web` folder again. Amendments marked with Version 2 and
+still pending when Version 3 is installed still fold up correctly.
+
 **Version 2.** Version 1 plus **Presenter view**: a second window, for the
 projected screen, that shows only the document around the passage being
 amended (including footnotes and endnotes). Version 2 replaced Version 1 under
@@ -8,8 +17,8 @@ so computers and documents that used Version 1 moved to it without
 reinstalling.
 
 A Word add-in for live, layered amendment display, built to
-`amendment-display-addin-spec_rev.md`. It formats text to match the approved
-`three_layer_amendment_mockup.docx`, and the Adopted and Failed keys fold up or
+`amendment-display-addin-spec_rev.md`. It formats text to match
+`three_layer_amendment_mockup_revised.docx`, and the Adopted and Failed keys fold up or
 revert a layer with one keystroke and no confirmation.
 
 **Download page:** `web/install.html` lets staff download `web/manifest.xml`.
@@ -35,16 +44,25 @@ so they stay in step with the add-in.
 
 The pane also has a button for each key, plus the legend.
 
-**How a strike looks.** Striking plain text changes its style where it stands.
-Striking text that a lower level *inserted* leaves that text alone and adds a
-struck copy right after it at the new level. This matches the mockup:
-"$75" underlined in black, then "$75" double-struck in blue.
+**How it looks.** All text is black. Each level shows in its shading (none,
+light blue, light purple), its strike lines (single, double, single), italics
+at Level 3, and its underline (black single, blue double, purple dotted).
+Struck text appears only once: striking plain text changes its style where it
+stands, and striking text that a lower level *inserted* also strikes it where
+it stands, keeping that level's underline. So "$75" inserted by the main
+motion and struck by a primary amendment is double-struck, shaded light blue,
+and still has its black single underline.
+
+**What a vote does to struck text.** Failed removes only that level's
+strikethrough, italics and shading, returning the words to how they were.
+Adopted removes the words if the level above had inserted them; otherwise they
+become a strike at the level above.
 
 **Which amendment Adopted/Failed acts on.** The most recently created pending
 amendment whose text contains the cursor. A cursor right at the edge of an
-amendment's text counts as inside it. Struck text and the struck copy that a
-secondary amendment adds both count as inside the secondary amendment, so an
-amendment that only strikes, or only inserts, resolves the same way.
+amendment's text counts as inside it. Its struck text and its new words both
+count as inside it, so an amendment that only strikes, or only inserts,
+resolves the same way.
 
 **Amendments in several places.** One motion can make the same change in
 several places, such as "Budget Committee" to "Finance Committee" wherever it
@@ -138,14 +156,18 @@ version 2408 or later.
   stored in the document's add-in settings, so a pending amendment survives
   closing and reopening the file once the file is saved (spec §10).
 - `web/taskpane.*`: the pane and keyboard-shortcut wiring (shared runtime).
-- Struck copies and the spaces the add-in inserts between marked pieces carry
-  an invisible `noProof` marker. That's how fold-up finds what it generated
-  without guessing from the text.
+- The spaces the add-in inserts between marked pieces carry an invisible
+  `noProof` marker. That's how fold-up finds what it generated without
+  guessing from the text. (Version 2's struck copies carry it too; fold-up
+  still handles them.)
+- With all text black, a run's level is read from its shading (struck text)
+  or underline style (inserted text). Version 2's colored text is still read
+  by its color.
 
 ## Tests
 
-`test/test.html` covers the transforms, including both mockup examples
-end to end. To run it without Node:
+`test/test.html` covers the transforms, including the revised mockup's
+examples and its exact formatting. To run it without Node:
 
 ```bash
 powershell -ExecutionPolicy Bypass -File test\serve.ps1

@@ -24,17 +24,27 @@ const {
 
 const FONT = "Calibri";
 const SHADE = { 2: "DCE9FA", 3: "F5DDF5" };
+// All text black; the level's color is only in the shading and underline.
+// del2u1 / del3u2: words a lower level inserted, struck where they stand and
+// keeping that level's underline.
+const UNDER = {
+  1: { type: UnderlineType.SINGLE, color: "000000" },
+  2: { type: UnderlineType.DOUBLE, color: "1F5FBF" },
+  3: { type: UnderlineType.DOTTED, color: "8B1E8B" },
+};
 const LEVEL_RUN = {
-  ins1: { underline: { type: UnderlineType.SINGLE }, color: "000000" },
+  ins1: { underline: UNDER[1], color: "000000" },
   del1: { strike: true, color: "000000" },
-  ins2: { underline: { type: UnderlineType.DOUBLE }, color: "1F5FBF", shading: shade(2) },
-  del2: { doubleStrike: true, color: "1F5FBF", shading: shade(2) },
-  ins3: { italics: true, underline: { type: UnderlineType.DOTTED }, color: "8B1E8B", shading: shade(3) },
-  del3: { italics: true, strike: true, color: "8B1E8B", shading: shade(3) },
+  ins2: { underline: UNDER[2], color: "000000", shading: shade(2) },
+  del2: { doubleStrike: true, color: "000000", shading: shade(2) },
+  del2u1: { doubleStrike: true, underline: UNDER[1], color: "000000", shading: shade(2) },
+  ins3: { italics: true, underline: UNDER[3], color: "000000", shading: shade(3) },
+  del3: { italics: true, strike: true, color: "000000", shading: shade(3) },
+  del3u2: { italics: true, strike: true, underline: UNDER[2], color: "000000", shading: shade(3) },
 };
 
 const SITE = "https://amendment-layers.netlify.app";
-const PROJECT = "C:\\Users\\burke\\Code by Claude\\amendment-display-addin";
+const PROJECT = "C:\\Users\\burke\\Code by Claude\\amendment-display-addin-v3";
 
 function shade(level) {
   return { type: ShadingType.CLEAR, color: "auto", fill: SHADE[level] };
@@ -44,7 +54,7 @@ function shade(level) {
 
 function runs(text, base = {}) {
   const out = [];
-  const re = /\*\*(.+?)\*\*|\*(.+?)\*|\[\[(ins|del)([123]):(.+?)\]\]|`(.+?)`|\[\^(\d+)\]/g;
+  const re = /\*\*(.+?)\*\*|\*(.+?)\*|\[\[(ins|del)([123](?:u[12])?):(.+?)\]\]|`(.+?)`|\[\^(\d+)\]/g;
   let last = 0;
   let m;
   while ((m = re.exec(text))) {
@@ -134,9 +144,9 @@ function makeKit(size) {
         row([cell("", w1, { merge: "continue" }), cell("", w2, { merge: "continue" }),
           cell(`*${LEVEL1_NOTE}*`, w3 + w4, { span: 2, size: Math.max(16, base.size - 2) })]),
         row([cell("**2**", w1), cell("Primary amendment", w2),
-          cell("[[ins2:blue, double underline]]", w3), cell("[[del2:blue, double strike]]", w4)]),
+          cell("[[ins2:blue double underline, blue shading]]", w3), cell("[[del2:double strike, blue shading]]", w4)]),
         row([cell("**3**", w1), cell("Secondary amendment", w2),
-          cell("[[ins3:purple italic, dotted underline]]", w3), cell("[[del3:purple italic, struck through]]", w4)]),
+          cell("[[ins3:italic, purple dotted underline, purple shading]]", w3), cell("[[del3:italic, struck through, purple shading]]", w4)]),
       ],
     });
   };
@@ -241,8 +251,8 @@ const SEVERAL_PLACES = [
 
 const RESULTS = [
   ["Level voted on", "Adopted", "Failed"],
-  ["**3** Secondary", "Its change is made in the primary amendment\u2019s blue text; the purple marks disappear.", "The purple marks disappear; the blue text is as it was."],
-  ["**2** Primary", "Its change is made in the main motion\u2019s black text; the blue marks disappear.", "The blue marks disappear; the main motion\u2019s text is as it was."],
+  ["**3** Secondary", "Its change is made in the primary amendment\u2019s text: words it struck that the primary amendment proposed to insert disappear; its new words take the primary amendment\u2019s formatting. The purple marks disappear.", "The purple marks (strikethrough, italics, shading) disappear; the primary amendment\u2019s text is as it was."],
+  ["**2** Primary", "Its change is made in the main motion\u2019s text: words it struck that the main motion proposed to insert disappear; other words it struck are shown with a strikeout line in the main motion. The blue marks disappear.", "The blue marks (double strikethrough, shading) disappear; the main motion\u2019s text is as it was."],
   ["**1** Main motion", "Struck words are removed; the underline is removed from inserted words.", "Inserted words are removed; struck words have the strikeout line removed from them."],
 ];
 
@@ -296,7 +306,7 @@ function quickReference() {
 
     k.heading(HeadingLevel.HEADING_1, "When the chair announces the result"),
     ...k.steps([
-      "Click inside the text of the amendment just voted on: its struck words, its struck copy, or its new words.",
+      "Click inside the text of the amendment just voted on: its struck words or its new words.",
       "Click **Adopted** or **Failed**. There is no confirmation.",
       "**Marked in several places?** Repeat in each place. *Or* click **All places** first, then Adopted or Failed once: it applies everywhere. All places switches itself off after that one vote.",
     ]),
@@ -390,14 +400,14 @@ function manual() {
 
     H1("3. How amendments are displayed"),
     k.legend([900, 2300, 3080, 3080]),
-    k.p("Color alone can be hard to see on a projector, so each level also has its own line style, and Level 3 is also italic.", { before: 80 }),
-    H2("Striking text that a lower level proposes to insert"),
-    k.p("When an amendment proposes to strike words that the level below it proposes to insert, those words stay as they are and a struck copy is added right after them in the new level\u2019s formatting. For example, if the main motion would insert \u201c$75\u201d and a primary amendment would strike it and insert \u201c$65\u201d, the screen shows:"),
-    k.p("[[del1:$50]] [[ins1:$75]] [[del2:$75]] [[ins2:$65]]", { run: { size: 26 } }),
+    k.p("All text is black at every level, for easy reading. Each level is shown by its shading (none, light blue or light purple), its number of strike lines, italics at Level 3, and the style and color of its underline (black single, blue double or purple dotted). Strike lines are always black.", { before: 80 }),
     H2("Striking ordinary text"),
-    k.p("Striking ordinary text (words that no pending amendment proposes to insert) simply changes those words\u2019 formatting where they stand. For example, if the main motion would strike \u201cquarterly\u201d and insert \u201cmonthly\u201d, and a primary amendment would strike the ordinary word \u201cPresident\u201d and insert \u201cSecretary\u201d, the screen shows:"),
+    k.p("Striking ordinary text (words that no pending amendment proposes to insert) changes those words\u2019 formatting where they stand. For example, if the main motion would strike \u201cquarterly\u201d and insert \u201cmonthly\u201d, and a primary amendment would strike the ordinary word \u201cPresident\u201d and insert \u201cSecretary\u201d, the screen shows:"),
     k.p("The Board shall meet [[del1:quarterly]] [[ins1:monthly]] at a location designated by the [[del2:President]] [[ins2:Secretary]].", { run: { size: 26 } }),
-    k.p("Here \u201cPresident\u201d is struck where it stands, with no copy, because no pending amendment proposes to insert it; compare \u201c$75\u201d above, which the main motion proposes to insert and which therefore stays, followed by its struck copy."),
+    H2("Striking text that a lower level proposes to insert"),
+    k.p("Struck words are never shown twice. When an amendment proposes to strike words that the level below it proposes to insert, those words are struck where they stand, with the striking level\u2019s strike lines and shading, and they keep the lower level\u2019s underline so a reader can still tell where they came from. For example, if the main motion would insert \u201c$75\u201d, a primary amendment would strike it and insert \u201c$65\u201d, and a secondary amendment would strike \u201c$65\u201d and insert \u201c$60\u201d, the screen shows:"),
+    k.p("[[del1:$50]] [[del2u1:$75]] [[del3u2:$65]] [[ins3:$60]]", { run: { size: 26 } }),
+    k.p("This works the same however long the struck passage is: a whole sentence the main motion proposes to add, struck by a primary amendment, appears once, double-struck and shaded light blue, still bearing its black underline."),
 
     H1("4. Marking amendments"),
     H2("When a new amendment is offered"),
@@ -420,7 +430,7 @@ function manual() {
     H1("5. Recording votes"),
     H2("Which amendment a click acts on"),
     k.p("Click inside the text of the amendment that was voted on, then click **Adopted** or **Failed**. The button acts on the most recently offered pending amendment whose text contains the cursor. A cursor right at the edge of an amendment\u2019s text counts as inside it."),
-    k.p("For a secondary amendment to strike and insert, its struck words, its struck copy of the primary amendment\u2019s words, and its new words all count as its text."),
+    k.p("An amendment\u2019s struck words (including words a lower level proposes to insert, which it strikes where they stand) and its new words all count as its text."),
     k.p("After any vote, the next mark you make starts a new amendment at the level currently lit in the pane, without the need to click the Active Level again. (That level stays as it was: if 3 is lit when a primary amendment is voted on, the next mark is a secondary amendment, so click **2** first if a new primary amendment is offered.)"),
     H2("What adopted and failed do"),
     k.table([2000, 3680, 3680], RESULTS),
@@ -497,7 +507,6 @@ function manual() {
       ["There is no pending Level 2 (primary) amendment for this secondary amendment to amend.", "Level 3 is active but no primary amendment is pending.", "Mark the primary amendment first (click 2)."],
       ["Word couldn\u2019t mark that selection\u2026", "The selection partly overlaps another amendment\u2019s text.", "Select only inside, or only outside, the other amendment’s text."],
       ["Another pending amendment is marked inside this one\u2026", "Another amendment\u2019s text sits inside this one.", "Vote on the inner one first."],
-      ["Nothing changed: Could not find the text that the struck \u201c\u2026\u201d refers to.", "A struck copy no longer matches the words it strikes (for example, after hand-editing).", "Use Ctrl+Z to undo the hand edit, or fix the text by hand."],
       ["Presenter view is open. Click its title bar\u2026", "The presenter window has opened.", "Move it to the projected screen (section 7)."],
       ["Presenter view couldn\u2019t open\u2026 / This version of Word can\u2019t run Presenter view\u2026", "Word refused to open the window, or is too old for it.", "Close and reopen the pane; check Word\u2019s version (section 11)."],
       ["Something went wrong: \u2026", "An unexpected error.", "Press Ctrl+Z if the text changed; note the message and tell whoever maintains the add-in."],

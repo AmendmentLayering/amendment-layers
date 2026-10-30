@@ -89,9 +89,16 @@ kbd { font: 11px Consolas, monospace; color: var(--muted); white-space: nowrap; 
 .legend thead th { font-size: 11px; font-weight: 600; color: var(--muted); }
 .legend tbody th { font-weight: 400; }
 
-.l1-ins { text-decoration: underline; }
-.l1-del { text-decoration: line-through; }
-.l2-ins { color: var(--l2); background: var(--l2-shade); text-decoration: underline double; }
-.l2-del { color: var(--l2); background: var(--l2-shade); text-decoration: line-through double; }
-.l3-ins { color: var(--l3); background: var(--l3-shade); font-style: italic; text-decoration: underline dotted; }
-.l3-del { color: var(--l3); background: var(--l3-shade); font-style: italic; text-decoration: line-through; }
+/* All text and strike lines black; the level's color is only in the shading
+   and underline. l1-u..l3-u: the underline kept by struck words that a lower
+   level inserted (an outer span, since one element's lines share a style). */
+.l1-ins, .l1-u { text-decoration: underline #000; }
+.l2-ins, .l2-u { text-decoration: underline double var(--l2); }
+.l3-ins, .l3-u { text-decoration: underline dotted var(--l3); }
+.l2-ins { background: var(--l2-shade); }
+.l3-ins { background: var(--l3-shade); font-style: italic; }
+.l1-del { text-decoration: line-through #000; }
+.l2-del { background: var(--l2-shade); text-decoration: line-through double #000; }
+.l3-del { background: var(--l3-shade); font-style: italic; text-decoration: line-through #000; }
+.legend-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.legend-note span { color: #1b1b1b; }

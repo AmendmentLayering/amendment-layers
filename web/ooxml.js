@@ -6,15 +6,21 @@
  * package string returned by Word's Range.getOoxml() and returns a package
  * string ready for Range.insertOoxml().
  *
- * Run classification (matches three_layer_amendment_mockup.docx):
- *   Level 1  insertion: single underline        deletion: single strike
- *   Level 2  insertion: blue, double underline  deletion: blue, double strike
- *   Level 3  insertion: purple, dotted underline deletion: purple, strike
- * Levels 2 and 3 carry pale shading; Level 3 is also italic.
+ * Run formatting (matches three_layer_amendment_mockup_revised.docx). All
+ * text is black; the level shows in the shading, strike lines, italics and
+ * the underline's style and color:
+ *   Level 1  insertion: black single underline   deletion: single strike
+ *   Level 2  insertion: blue double underline    deletion: double strike
+ *   Level 3  insertion: purple dotted underline  deletion: single strike
+ * Levels 2 and 3 carry pale shading (blue, purple); Level 3 is also italic.
+ * Struck words that a lower level inserted are struck where they stand and
+ * keep that level's underline, so a run can be both struck (at the striking
+ * level, shown by its shading) and underlined (by the inserting level).
  *
- * Text the add-in generates itself (the struck copy of a lower-level insertion,
- * and the plain space separating marked segments) carries <w:noProof/> as an
- * invisible marker, so fold-up can find exactly what it generated.
+ * Text the add-in generates itself (the plain space separating marked
+ * segments) carries <w:noProof/> as an invisible marker, so fold-up can find
+ * exactly what it generated. Version 2 also generated a struck copy of a
+ * lower-level insertion; fold-up still handles those in older documents.
  */
 (function (root) {
   "use strict";
@@ -24,9 +30,12 @@
   const REL = "http://schemas.openxmlformats.org/package/2006/relationships";
   const XML_NS = "http://www.w3.org/XML/1998/namespace";
 
+  // Underline colors. Version 2 also colored the text itself with these, so
+  // text in these colors is still read as that level.
   const LEVEL_COLOR = { 1: "000000", 2: "1F5FBF", 3: "8B1E8B" };
   const LEVEL_SHADE = { 2: "DCE9FA", 3: "F5DDF5" };
   const UNDERLINE = { 1: "single", 2: "double", 3: "dotted" };
+  const TEXT_COLOR = "000000";
 
   // Run properties this add-in owns. Anything else in w:rPr (fonts, size,
   // bold, ...) is left untouched.
@@ -105,15 +114,27 @@
 
   // ------------------------------------------------------------ run semantics
 
+  // kind   plain | ins | del
+  // level  the inserting level (ins) or the striking level (del)
+  // under  for del: the level that inserted the struck words (their
+  //        underline), or 0 for adopted text
   function classify(r) {
     const rPr = kid(r, "rPr");
-    const color = (wVal(kid(rPr, "color")) || "").toUpperCase();
+    const gen = isOn(kid(rPr, "noProof"));
     const u = kid(rPr, "u");
-    const underlined = !!u && (wVal(u) || "single") !== "none";
-    const struck = isOn(kid(rPr, "strike")) || isOn(kid(rPr, "dstrike"));
-    const level = color === LEVEL_COLOR[2] ? 2 : color === LEVEL_COLOR[3] ? 3 : 1;
-    const kind = struck ? "del" : underlined ? "ins" : "plain";
-    return { kind, level: kind === "plain" ? 0 : level, gen: isOn(kid(rPr, "noProof")) };
+    const uVal = u ? wVal(u) || "single" : "none";
+    const under = uVal === "none" ? 0 : uVal === "double" ? 2 : uVal === "dotted" ? 3 : 1;
+    const dstrike = isOn(kid(rPr, "dstrike"));
+    if (!dstrike && !isOn(kid(rPr, "strike"))) {
+      return { kind: under ? "ins" : "plain", level: under, under: 0, gen };
+    }
+    const shd = kid(rPr, "shd");
+    const fill = ((shd && shd.getAttributeNS(W, "fill")) || "").toUpperCase();
+    const color = (wVal(kid(rPr, "color")) || "").toUpperCase();
+    const level = fill === LEVEL_SHADE[2] || color === LEVEL_COLOR[2] ? 2
+      : fill === LEVEL_SHADE[3] || color === LEVEL_COLOR[3] ? 3
+      : dstrike ? 2 : 1;
+    return { kind: "del", level, under, gen };
   }
 
   function runText(r) {
@@ -141,13 +162,14 @@
     return c.kind === "del" && c.gen && c.level === level;
   }
 
-  function levelProps(kind, level) {
+  function levelProps(kind, level, under) {
     if (kind === "plain" || !level) return [];
     const p = [];
     if (level === 3) p.push(["i"], ["iCs"]);
     if (kind === "del") p.push([level === 2 ? "dstrike" : "strike"]);
-    p.push(["color", { val: LEVEL_COLOR[level] }]);
-    if (kind === "ins") p.push(["u", { val: UNDERLINE[level] }]);
+    p.push(["color", { val: TEXT_COLOR }]);
+    const u = kind === "ins" ? level : under;
+    if (u) p.push(["u", { val: UNDERLINE[u], color: LEVEL_COLOR[u] }]);
     if (LEVEL_SHADE[level]) p.push(["shd", { val: "clear", color: "auto", fill: LEVEL_SHADE[level] }]);
     return p;
   }
@@ -163,7 +185,8 @@
     rPr.appendChild(el);
   }
 
-  function restyle(r, kind, level, gen) {
+  // `under`: for a deletion, the level whose underline the struck words keep.
+  function restyle(r, kind, level, gen, under) {
     const doc = r.ownerDocument;
     let rPr = kid(r, "rPr");
     if (!rPr) {
@@ -171,7 +194,7 @@
       r.insertBefore(rPr, r.firstChild);
     }
     for (const c of kids(rPr)) if (MANAGED.has(c.localName)) rPr.removeChild(c);
-    const props = levelProps(kind, level);
+    const props = levelProps(kind, level, under || 0);
     if (gen) props.push(["noProof"]);
     for (const [name, attrs] of props) insertOrdered(rPr, wEl(doc, name, attrs));
   }
@@ -182,13 +205,6 @@
     t.setAttributeNS(XML_NS, "xml:space", "preserve");
     t.textContent = text;
     r.appendChild(t);
-  }
-
-  function makeSep(like) {
-    const sep = like.cloneNode(true);
-    setRunText(sep, " ");
-    restyle(sep, "plain", 0, true);
-    return sep;
   }
 
   // Splits a plain-text run so its first `at` characters stay in `r`; returns
@@ -306,35 +322,18 @@
     const keepPlain = leadingSpaceToKeep(doc, skip, found);
     for (const p of paragraphs(doc, skip, found)) {
       const runs = collectRuns(p, skip, found);
-      for (let i = 0; i < runs.length;) {
-        const r = runs[i];
+      for (const r of runs) {
         const c = classify(r);
         if (c.kind === "ins" && c.level < level && /^\s*$/.test(runText(r))) {
           // A space caught at the edge of the selection: nothing to strike.
-          i++;
           continue;
         }
         if (c.kind === "ins" && c.level < level) {
-          // A lower level's insertion stays visible; a struck copy of it at
-          // this level follows, set off by a generated space.
-          const group = [r];
-          let j = i + 1;
-          while (j < runs.length && runs[j].parentNode === r.parentNode) {
-            const cj = classify(runs[j]);
-            if (cj.kind !== "ins" || cj.level !== c.level) break;
-            group.push(runs[j++]);
-          }
-          let prev = insertAfter(group[group.length - 1], makeSep(group[group.length - 1]));
-          for (const g of group) {
-            const copy = g.cloneNode(true);
-            restyle(copy, "del", level, true);
-            prev = insertAfter(prev, copy);
-          }
+          // A lower level's insertion is struck where it stands and keeps
+          // that level's underline; no copy of it is made.
+          restyle(r, "del", level, false, c.level);
           changed++;
-          i = j;
-          continue;
-        }
-        if (c.kind === "ins" && c.level === level) {
+        } else if (c.kind === "ins" && c.level === level) {
           // Striking this amendment's own insertion just takes it back out.
           r.parentNode.removeChild(r);
           changed++;
@@ -342,7 +341,6 @@
           restyle(r, "del", level, false);
           changed++;
         }
-        i++;
       }
     }
     return changed;
@@ -367,9 +365,10 @@
       const runs = collectRuns(p, skip, found);
       const drop = new Set();
 
-      // 1. Struck copies: the lower-level insertion they strike is either
-      //    removed (it belonged to the level being folded into) or the copy
-      //    moves down one level.
+      // 1. Struck copies, made by Version 2 in documents still pending from
+      //    then: the lower-level insertion they strike is either removed (it
+      //    belonged to the level being folded into) or the copy moves down
+      //    one level.
       for (let i = 0; i < runs.length; i++) {
         if (!isCopyAt(runs[i], level)) continue;
         let j = i;
@@ -422,15 +421,17 @@
         i = j - 1;
       }
 
-      // 2. In-place deletions and insertions at this level move down a level;
-      //    at Level 1 they become final (deleted text goes, inserted text
-      //    becomes plain).
+      // 2. Deletions and insertions at this level move down a level. Struck
+      //    words that the level below had inserted go; other struck words
+      //    become a strike at the level below, keeping any underline. At
+      //    Level 1 the change becomes final (deleted text goes, inserted
+      //    text becomes plain).
       for (const r of runs) {
         if (drop.has(r)) continue;
         const c = classify(r);
         if (c.level !== level || (c.kind === "del" && c.gen)) continue;
         if (c.kind === "del") {
-          if (target >= 1) restyle(r, "del", target, false);
+          if (target >= 1 && c.under !== target) restyle(r, "del", target, false, c.under);
           else drop.add(r);
         } else {
           restyle(r, target >= 1 ? "ins" : "plain", target, false);
@@ -660,7 +661,12 @@
     const va = wVal(kid(rPr, "vertAlign"));
     if (va === "superscript") html = `<sup>${html}</sup>`;
     else if (va === "subscript") html = `<sub>${html}</sub>`;
-    return { html: classes.length ? `<span class="${classes.join(" ")}">${html}</span>` : html, text };
+    if (classes.length) html = `<span class="${classes.join(" ")}">${html}</span>`;
+    // Struck words a lower level inserted keep its underline. A browser draws
+    // all of one element's lines in one style and color, so the underline
+    // goes on an outer span.
+    if (cls.kind === "del" && cls.under) html = `<span class="a-u${cls.under}">${html}</span>`;
+    return { html, text };
   }
 
   // Word's paragraph order, including paragraphs inside tables, so index i

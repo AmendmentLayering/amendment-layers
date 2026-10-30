@@ -57,13 +57,17 @@ table.t td { border: 1px solid #bbb; padding: 0.15em 0.4em; vertical-align: top;
 table.t .p { margin: 0; }
 
 /* Amendment levels, as in the add-in's legend, with heavier lines for a
-   projector. */
-.a-ins1 { text-decoration: underline; text-decoration-thickness: 0.07em; text-underline-offset: 0.12em; }
-.a-del1 { text-decoration: line-through; text-decoration-thickness: 0.07em; }
-.a-ins2 { color: var(--l2); background: var(--l2-shade); text-decoration: underline double; text-decoration-thickness: 0.06em; text-underline-offset: 0.1em; }
-.a-del2 { color: var(--l2); background: var(--l2-shade); text-decoration: line-through double; text-decoration-thickness: 0.06em; }
-.a-ins3 { color: var(--l3); background: var(--l3-shade); font-style: italic; text-decoration: underline dotted; text-decoration-thickness: 0.09em; text-underline-offset: 0.12em; }
-.a-del3 { color: var(--l3); background: var(--l3-shade); font-style: italic; text-decoration: line-through; text-decoration-thickness: 0.07em; }
+   projector. All text and strike lines are black; the level's color is only
+   in the shading and the underline. a-u1..3 is the underline kept by struck
+   words that a lower level inserted (an outer span around the a-del span). */
+.a-ins1, .a-u1 { text-decoration: underline #000; text-decoration-thickness: 0.07em; text-underline-offset: 0.12em; }
+.a-ins2, .a-u2 { text-decoration: underline double var(--l2); text-decoration-thickness: 0.06em; text-underline-offset: 0.1em; }
+.a-ins3, .a-u3 { text-decoration: underline dotted var(--l3); text-decoration-thickness: 0.09em; text-underline-offset: 0.12em; }
+.a-ins2 { background: var(--l2-shade); }
+.a-ins3 { background: var(--l3-shade); font-style: italic; }
+.a-del1 { text-decoration: line-through #000; text-decoration-thickness: 0.07em; }
+.a-del2 { background: var(--l2-shade); text-decoration: line-through double #000; text-decoration-thickness: 0.06em; }
+.a-del3 { background: var(--l3-shade); font-style: italic; text-decoration: line-through #000; text-decoration-thickness: 0.07em; }
 
 #waiting {
   display: none;
@@ -83,8 +87,9 @@ body.waiting #waiting { display: grid; }
   right: 0;
   bottom: 0;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 2.5em;
+  gap: 0.2em 2.5em;
   padding: 0.4em 1em;
   background: rgba(255, 255, 255, 0.95);
   border-top: 1px solid #ddd;
