@@ -1,8 +1,8 @@
 {
   "name": "amendment-display-addin",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
-  "description": "Word add-in for live, layered amendment display (Levels 1-3) with one-key adopt/fail fold-up.",
+  "description": "Word add-in for live, layered amendment display (Levels 1-3), one-click Adopted/Failed, and Tracked Changes conversion.",
   "scripts": {
     "register": "office-addin-dev-settings unregister manifest.xml && office-addin-dev-settings register manifest.xml && office-addin-dev-settings debugging manifest.xml --disable && office-addin-dev-settings runtime-log --disable",
     "unregister": "office-addin-dev-settings unregister manifest.xml",

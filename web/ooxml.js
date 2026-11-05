@@ -777,6 +777,75 @@
     return serialize(doc);
   }
 
+  // ------------------------------------------- manual markup -> Track Changes
+
+  // What a run's manual markup will become: "del" for single strikethrough,
+  // "ins" for a single underline (as ConvertManualMarkupToTrackedChanges
+  // finds them), otherwise null. Struck and underlined counts as struck.
+  function trackedKind(r) {
+    const rPr = kid(r, "rPr");
+    if (isOn(kid(rPr, "strike"))) return "del";
+    const u = kid(rPr, "u");
+    if (u && (wVal(u) || "single") === "single") return "ins";
+    return null;
+  }
+
+  function nextElement(node) {
+    let n = node.nextSibling;
+    while (n && n.nodeType !== 1) n = n.nextSibling;
+    return n;
+  }
+
+  // Wraps each stretch of struck runs, and each stretch of underlined runs,
+  // in a content control tagged `${prefix}del-${n}` / `${prefix}ins-${n}`,
+  // and removes the strikethrough or underline from those runs. The add-in
+  // then turns each control's text into a tracked deletion or insertion.
+  function markupToTrackedDoc(doc, prefix, counter) {
+    let changed = false;
+    for (const p of paragraphs(doc, new Set(), new Set())) {
+      const groups = [];
+      let group = null;
+      for (const r of collectRuns(p, new Set(), new Set())) {
+        const kind = hasVisibleContent(r) ? trackedKind(r) : null;
+        if (kind && group && group.kind === kind && nextElement(group.runs[group.runs.length - 1]) === r) {
+          group.runs.push(r);
+          continue;
+        }
+        group = kind ? { kind, runs: [r] } : null;
+        if (group) groups.push(group);
+      }
+      for (const g of groups) {
+        const first = g.runs[0];
+        const sdt = wEl(doc, "sdt");
+        const sdtPr = wEl(doc, "sdtPr");
+        const tag = `${prefix}${g.kind}-${counter.n++}`;
+        sdtPr.appendChild(wEl(doc, "tag", { val: tag }));
+        const content = wEl(doc, "sdtContent");
+        sdt.appendChild(sdtPr);
+        sdt.appendChild(content);
+        first.parentNode.insertBefore(sdt, first);
+        for (const r of g.runs) {
+          const rPr = kid(r, "rPr");
+          for (const c of kids(rPr, g.kind === "del" ? "strike" : "u")) rPr.removeChild(c);
+          content.appendChild(r);
+        }
+        changed = true;
+      }
+    }
+    // A footnote's or endnote's own number (at the start of the note) is left
+    // out: Word keeps the note's number when the paragraph is replaced, so a
+    // copy here would show it twice.
+    if (changed) {
+      for (const tag of ["footnoteRef", "endnoteRef"]) {
+        for (const el of Array.from(doc.getElementsByTagNameNS(W, tag))) {
+          const r = el.parentNode;
+          if (r && r.parentNode) r.parentNode.removeChild(r);
+        }
+      }
+    }
+    return changed;
+  }
+
   function run(xml, ownTag, skipTags, fn) {
     const doc = parse(xml);
     unwrapSdt(doc, ownTag);
@@ -883,6 +952,16 @@
         ? `${note.kind === "endnote" ? "Endnote" : "Footnote"} ${formatNoteNumber(note.num, fmt[note.kind])}`
         : null;
       return { html, texts: state.texts, label, fmt };
+    },
+
+    /**
+     * Manual markup -> Track Changes, step 1: wrap struck and underlined
+     * stretches in content controls tagged `${prefix}del-${n}` and
+     * `${prefix}ins-${n}`, with the strike or underline removed. `counter`
+     * ({ n }) numbers the controls across calls.
+     */
+    markupToTracked(xml, prefix, counter) {
+      return run(xml, null, [], (doc) => markupToTrackedDoc(doc, prefix, counter));
     },
 
     /** Smallest package that still restores the span (stored as priorText). */

@@ -28,10 +28,13 @@ const Presenter = (() => {
       onStatus("This version of Word can't run Presenter view (it needs Dialog API 1.2).", "error");
       return;
     }
-    const url = new URL("presenter.html", window.location.href).href;
+    // Word titles the window with its address, so the address names the
+    // document: ...presenter.html?document=Bylaws_Amendments.docx
+    const url = new URL("presenter.html", window.location.href);
+    url.search = `document=${documentName()}`;
     // Add-in windows have no maximize button, so open it filling the screen
     // Word is on; Windows+Shift+arrow then moves it whole to the projector.
-    Office.context.ui.displayDialogAsync(url, { height: 100, width: 100, promptBeforeOpen: false }, (res) => {
+    Office.context.ui.displayDialogAsync(url.href, { height: 100, width: 100, promptBeforeOpen: false }, (res) => {
       if (res.status !== Office.AsyncResultStatus.Succeeded) {
         onStatus(`Presenter view couldn't open: ${res.error.message}`, "error");
         return;
@@ -44,6 +47,19 @@ const Presenter = (() => {
       onOpenChange(true);
       onStatus("Presenter view is open. Click its title bar, then press Windows key + Shift + → (or ←) to move it to the projected screen.");
     });
+  }
+
+  // The document's file name, with anything but letters, digits, dots and
+  // hyphens shown as "_" so the address stays readable (no %20).
+  function documentName() {
+    let name = "";
+    try {
+      const where = Office.context.document.url || "";
+      name = decodeURIComponent(where.split(/[\\/]/).pop().split(/[?#]/)[0]);
+    } catch (e) {
+      // An unusual address; fall back below.
+    }
+    return (name || "Unsaved document").replace(/[^A-Za-z0-9.-]+/g, "_");
   }
 
   function close() {

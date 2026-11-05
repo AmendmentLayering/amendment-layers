@@ -1,5 +1,18 @@
 # Amendment Layers: Word add-in
 
+**Version 4.** Version 3 plus two **Tracked Changes** buttons in the pane,
+JavaScript versions of the Word macros `ConvertTrackedChangesToManualMarkup`
+and `ConvertManualMarkupToTrackedChanges` (see *How it works*). Version 3 is
+kept unchanged in the `amendment-display-addin-v3` folder beside this one.
+Version 4 is published the same way (same add-in ID and site), so uploading
+this `web` folder replaces Version 3 for everyone; to go back, upload Version
+3's `web` folder again. The manifest changed only in its description (no
+"fold-up"), its tooltip and `<Version>` (4.0.0.0), so computers using
+Version 3's manifest get Version 4 without reinstalling. Also new: the
+Presenter view window's address names the document
+(`presenter.html?document=Bylaws.docx`), because Word shows that address in
+the window's title bar.
+
 **Version 3.** Version 2 with the display revised to match
 `three_layer_amendment_mockup_revised.docx`: struck text appears only once,
 and all text is black at every level. Version 2 is kept unchanged in the
@@ -163,6 +176,56 @@ version 2408 or later.
 - With all text black, a run's level is read from its shading (struck text)
   or underline style (inserted text). Version 2's colored text is still read
   by its color.
+- **Tracked Changes conversion** (`fromTracked` / `toTracked` in
+  `engine.js`). Both act on the selection (main text or a note), or, if
+  nothing is selected, on the main text and then each footnote and endnote
+  body in turn (WordApi 1.5), with a sync between so nothing is done twice.
+  They act at once: the macros' confirming message box was left out on
+  purpose, and the manual instead warns staff in red to convert a copy.
+  *Tracked Changes → manual markup* (WordApi 1.6):
+  with tracking off, each tracked deletion's range is struck through and
+  the revision rejected; each insertion's range is underlined and accepted;
+  other revisions are accepted. *Manual markup → Tracked Changes*
+  (WordApi 1.4) is refused while any pending amendment's span is in scope;
+  besides the snapshot's spans, the controls in each note body (or in and
+  around the selection) are checked against the pending spans' tags.
+  Otherwise, with tracking off, `AmdOoxml.markupToTracked` wraps each
+  single-struck and single-underlined stretch in a content control tagged
+  `amdtc-…` (strike/underline removed) and the paragraph is replaced; then,
+  with tracking on, deletion controls' contents are deleted (Word keeps them
+  as tracked deletions) and insertion controls are emptied untracked and
+  refilled tracked; the controls are then removed and tracking left on.
+  The `amdtc-` prefix keeps them clear of the add-in's empty-span cleanup.
+  Each insertion is put back from Word's own copy of the control
+  (`getOoxml` before it is emptied), and its text is then compared with
+  what it was; a mismatch stops the conversion with an error rather than
+  losing words. (Putting back a package built by the add-in, and rewriting
+  only from a paragraph's first marked word to its last, were tried; in
+  Word the first silently put back nothing and the pair ended in
+  InvalidArgument, so both were dropped.) A note's own number
+  (`footnoteRef`/`endnoteRef`) is left out of the rewritten paragraph,
+  because Word keeps the note's number when the paragraph is replaced and a
+  copy showed it twice; the number of note numbers in the note's OOXML is
+  compared before and after, and a difference stops the conversion. The
+  controls are removed with tracking off (removed with tracking on, Word
+  kept them as a tracked change, and later parts processed them again), and
+  each part handles only the controls it numbered. With nothing selected, the notes are converted
+  *before* the main text: a struck stretch that includes a note's
+  reference mark is deleted with tracking on, and Word then marks the
+  whole note deleted, after which the note's own markup could no longer be
+  converted (this, not the range handling, was why a test turned a whole
+  footnote into a tracked deletion and stopped before the endnote). Checked
+  with Word COM: with the note's own changes tracked first, rejecting every
+  story's revisions restores the note as it was, and accepting removes it.
+  The add-in itself has not yet been retested in Word.
+- **Strike and Insert refuse Tracked Changes** (`trackedChangesBlock`):
+  while Track Changes is on, or on a selection with Tracked Changes, nothing
+  is marked and the status box points to *Tracked Changes → manual markup*.
+  That button turns Track Changes off even when there is nothing to
+  convert, and works while amendments are pending (on purpose: staff can
+  catch up on a document that arrived with Tracked Changes mid-debate).
+  Both directions were tested in Word on the main text; the footnote and
+  endnote coverage was added afterwards and needs its own test.
 
 ## Tests
 
@@ -183,4 +246,5 @@ Then open http://localhost:8123/test/test.html.
   Select wholly inside it or wholly outside it.
 - Untracked Level 1 resolution reads any underlined or struck text in the
   paragraph as Level 1 markup.
-- The final change to real Track Changes is out of scope (spec §8).
+- Tracked Changes conversion reads every single underline and single
+  strikethrough as a proposed change.

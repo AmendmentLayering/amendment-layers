@@ -331,6 +331,29 @@ const Engine = (() => {
 
   // ---------------------------------------------------------------- marking
 
+  // Strike and Insert refuse while Track Changes is on (Word would record the
+  // marks themselves as Tracked Changes) and refuse text that has Tracked
+  // Changes (the marks would not come out reliably, and the main motion's
+  // changes must be manual markup to be voted on). Returns the message, or
+  // null if marking may go ahead. Either check is skipped where Word lacks
+  // the feature it needs.
+  async function trackedChangesBlock(context, sel) {
+    const doc = context.document;
+    const hasMode = Office.context.requirements.isSetSupported("WordApi", "1.4");
+    const hasList = Office.context.requirements.isSetSupported("WordApi", "1.6");
+    if (hasMode) doc.load("changeTrackingMode");
+    const changes = hasList ? sel.getTrackedChanges() : null;
+    if (changes) changes.load("items/type");
+    await context.sync();
+    const fix = "Click Tracked Changes → manual markup in the pane first (it also turns Track Changes off), " +
+      "then mark the amendment.";
+    if (hasMode && doc.changeTrackingMode !== Word.ChangeTrackingMode.off) {
+      return `Track Changes is on, so Word would record the amendment as Tracked Changes. ${fix}`;
+    }
+    if (changes && changes.items.length) return `This text has Tracked Changes. ${fix}`;
+    return null;
+  }
+
   // fromPane: the pane's Insert button, which can't hand the keyboard back to
   // the document, so it only marks words already typed and selected.
   async function mark(kind, fromPane) {
@@ -340,6 +363,8 @@ const Engine = (() => {
       if (kind === "del" && sel.isEmpty) {
         return status("Select the words to strike first, then click Strike.", "warn");
       }
+      const blocked = await trackedChangesBlock(context, sel);
+      if (blocked) return status(blocked, "error");
 
       let thread = openThread(level);
       if (!thread) {
@@ -628,6 +653,289 @@ const Engine = (() => {
     status(`Level 1 change ${adopted ? "adopted" : "failed"}.`);
   }
 
+  // ------------------------------------------------- Track Changes conversion
+  //
+  // JavaScript versions of the Word macros ConvertTrackedChangesToManualMarkup
+  // and ConvertManualMarkupToTrackedChanges. With text selected (in the main
+  // text or in a note), each works on the selection only; otherwise on the
+  // whole document: the main text and every footnote and endnote. There is no
+  // confirmation (the macros' message box); the User Manual warns staff to
+  // work on a copy.
+  //
+  // The main text and each note are done one after another, with a sync in
+  // between, so nothing is converted twice even if Word were to report a
+  // note's text as part of the main text too.
+
+  const TC_TAG = "amdtc-"; // not "amd-": the add-in's own span cleanup must leave these alone
+
+  const scopeName = (sel) => (sel.isEmpty ? "the whole document" : "the selected text");
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  function conversionFailed(err) {
+    console.error(err);
+    status("Word couldn't finish the conversion: " + ((err && err.message) || String(err)) +
+      ". Press Ctrl+Z until the text is as before, or close the document without saving.", "error");
+  }
+
+  // The body of every footnote and endnote (none where Word lacks WordApi 1.5).
+  async function noteBodies(context) {
+    if (!Office.context.requirements.isSetSupported("WordApi", "1.5")) return [];
+    const fn = context.document.body.footnotes;
+    const en = context.document.body.endnotes;
+    fn.load("items/type");
+    en.load("items/type");
+    await context.sync();
+    return fn.items.concat(en.items).map((note) => note.body);
+  }
+
+  // Content controls whose tag starts with `prefix`, in the main text and the
+  // notes, each once.
+  async function controlsTagged(context, bodies, prefix) {
+    const lists = [context.document.contentControls].concat(bodies.map((b) => b.contentControls));
+    for (const l of lists) l.load("items/tag");
+    await context.sync();
+    const byTag = new Map();
+    for (const l of lists) {
+      for (const cc of l.items) if (cc.tag && cc.tag.startsWith(prefix) && !byTag.has(cc.tag)) byTag.set(cc.tag, cc);
+    }
+    return [...byTag.values()];
+  }
+
+  // Tracked deletions become struck-through text, tracked insertions become
+  // underlined text (Level 1 markup), and Track Changes is turned off. Other
+  // revisions (formatting changes and the like) are accepted.
+  async function fromTracked() {
+    if (!Office.context.requirements.isSetSupported("WordApi", "1.6")) {
+      return status("This version of Word can't convert Tracked Changes (it needs Word version 2308 or later).", "error");
+    }
+    await Word.run(async (context) => {
+      const doc = context.document;
+      const sel = doc.getSelection();
+      sel.load("isEmpty");
+      await context.sync();
+      const scopes = sel.isEmpty ? [doc.body].concat(await noteBodies(context)) : [sel];
+      const where = scopeName(sel);
+
+      let found = false;
+      let del = 0;
+      let ins = 0;
+      try {
+        for (const scope of scopes) {
+          const changes = scope.getTrackedChanges();
+          changes.load("items/type");
+          await context.sync();
+          if (!changes.items.length) continue;
+          if (!found) doc.changeTrackingMode = Word.ChangeTrackingMode.off;
+          found = true;
+          for (const tc of changes.items) {
+            // Formatting first (with tracking off it is ordinary formatting),
+            // then the revision is resolved, keeping the words.
+            if (tc.type === "Deleted") {
+              tc.getRange().font.strikeThrough = true;
+              tc.reject();
+              del++;
+            } else if (tc.type === "Added") {
+              tc.getRange().font.underline = "Single";
+              tc.accept();
+              ins++;
+            } else {
+              tc.accept();
+            }
+          }
+          await context.sync();
+        }
+      } catch (err) {
+        return conversionFailed(err);
+      }
+      if (!found) {
+        // Still turn Track Changes off: Strike and Insert refuse while it is
+        // on, and their message sends staff to this button.
+        doc.load("changeTrackingMode");
+        await context.sync();
+        if (doc.changeTrackingMode === Word.ChangeTrackingMode.off) {
+          return status(`There are no Tracked Changes in ${where}.`, "warn");
+        }
+        doc.changeTrackingMode = Word.ChangeTrackingMode.off;
+        await context.sync();
+        return status(`There are no Tracked Changes in ${where}. Track Changes is now off, so amendments can be marked.`);
+      }
+      status(`Converted in ${where}: ${plural(del, "deletion")} now struck through, ` +
+        `${plural(ins, "insertion")} now underlined. Track Changes is off.`);
+    });
+  }
+
+  // True if an amendment awaiting its vote is in scope: anywhere, with nothing
+  // selected; otherwise in, around or overlapping the selection. Besides the
+  // snapshot's spans, the controls in each note (and in or around the
+  // selection) are checked by tag, in case Word lists a note's controls only
+  // under that note.
+  async function pendingInScope(context, sel, anchors, bodies) {
+    if (anchors.some((a) => sel.isEmpty || OVERLAP.has(a.rel))) return true;
+    const pending = new Set(pendingThreads().flatMap((t) => t.anchors.map((a) => a.tag)));
+    if (!pending.size) return false;
+    const lists = sel.isEmpty ? bodies.map((b) => b.contentControls) : [sel.contentControls];
+    for (const l of lists) l.load("items/tag");
+    const around = sel.isEmpty ? null : sel.parentContentControlOrNullObject;
+    if (around) around.load("isNullObject,tag");
+    await context.sync();
+    if (around && !around.isNullObject && pending.has(around.tag)) return true;
+    return lists.some((l) => l.items.some((cc) => pending.has(cc.tag)));
+  }
+
+  // The paragraphs of `scope` (for a selection, the selected part of each)
+  // that have any strikethrough or underline.
+  async function markedParts(context, scope, sel) {
+    const paras = scope.paragraphs;
+    paras.load("items");
+    await context.sync();
+    const parts = paras.items.map((p) => (sel.isEmpty ? p.getRange("Content")
+      : p.getRange("Content").intersectWithOrNullObject(sel)));
+    for (const r of parts) r.load("isNullObject,isEmpty");
+    await context.sync();
+    const live = parts.filter((r) => !r.isNullObject && !r.isEmpty);
+    for (const r of live) r.load("font/strikeThrough,font/underline");
+    await context.sync();
+    return live.filter((r) => r.font.strikeThrough !== false || (r.font.underline && r.font.underline !== "None"));
+  }
+
+  // Struck-through text becomes tracked deletions and underlined text tracked
+  // insertions, and Track Changes is left on. Refused while any amendment in
+  // scope still awaits its vote.
+  async function toTracked() {
+    if (!Office.context.requirements.isSetSupported("WordApi", "1.4")) {
+      return status("This version of Word can't convert to Tracked Changes (it needs Word version 2208 or later).", "error");
+    }
+    await Word.run(async (context) => {
+      const doc = context.document;
+      const { sel, anchors } = await snapshot(context);
+      const notes = await noteBodies(context);
+      const bodies = [doc.body].concat(notes);
+      if (await pendingInScope(context, sel, anchors, bodies)) {
+        return status("Votes must be recorded on pending amendments before converting to Tracked Changes.", "error");
+      }
+      const where = scopeName(sel);
+      // Notes before the main text: if struck text in the main text includes
+      // a note's number, deleting it with tracking on makes Word mark the
+      // whole note deleted, after which the note's own markup can't be
+      // converted. Done first, the note's own changes are tracked, and Word
+      // still resolves them correctly (Reject All restores the note as it
+      // was; Accept All removes it).
+      const scopes = sel.isEmpty ? notes.concat([doc.body]) : [sel];
+
+      doc.load("changeTrackingMode");
+      await context.sync();
+      const before = doc.changeTrackingMode;
+      const prefix = `${TC_TAG}${Date.now().toString(36)}-`;
+      const counter = { n: 1 };
+      let found = false;
+      let dels = 0;
+      let inss = 0;
+      try {
+        for (const scope of scopes) {
+          const targets = await markedParts(context, scope, sel);
+          if (!targets.length) continue;
+          found = true;
+
+          // 1. With tracking off, put each struck or underlined stretch in a
+          //    tagged content control, without its strikethrough or underline.
+          doc.changeTrackingMode = Word.ChangeTrackingMode.off;
+          const oxs = targets.map((r) => r.getOoxml());
+          const isNote = notes.includes(scope);
+          const noteBefore = isNote ? scope.getOoxml() : null;
+          await context.sync();
+          const firstN = counter.n;
+          targets.forEach((r, i) => {
+            const out = AmdOoxml.markupToTracked(oxs[i].value, prefix, counter);
+            if (out.changed) r.insertOoxml(out.xml, "Replace");
+          });
+          await context.sync();
+          // A note must still have its number, once: what was rewritten left
+          //    it out, so Word's own is kept.
+          if (isNote) {
+            const after = scope.getOoxml();
+            await context.sync();
+            if (noteNumbers(after.value) !== noteNumbers(noteBefore.value)) {
+              throw new Error("a footnote's or endnote's number was changed");
+            }
+          }
+
+          // This scope's controls only (numbered firstN onwards).
+          const mine = (await controlsTagged(context, bodies, prefix))
+            .filter((cc) => Number(cc.tag.slice(cc.tag.lastIndexOf("-") + 1)) >= firstN);
+          const delCcs = mine.filter((cc) => cc.tag.startsWith(`${prefix}del-`));
+          const insCcs = mine.filter((cc) => cc.tag.startsWith(`${prefix}ins-`));
+
+          // 2. Insertions: take the words out untracked, to be put back with
+          //    tracking on so that Word records them as inserted. (Putting
+          //    back a package built by the add-in instead of Word's own copy
+          //    was tried, and in Word it silently put back nothing.)
+          const insOx = insCcs.map((cc) => cc.getOoxml());
+          for (const cc of insCcs) cc.load("text");
+          await context.sync();
+          const insText = insCcs.map((cc) => cc.text);
+          for (const cc of insCcs) cc.clear();
+          await context.sync();
+
+          // 3. With tracking on: deletions are deleted (Word keeps them as
+          //    tracked deletions) and insertions are put back.
+          doc.changeTrackingMode = Word.ChangeTrackingMode.trackAll;
+          insCcs.forEach((cc, i) => cc.insertOoxml(AmdOoxml.forInsert(insOx[i].value, cc.tag), "Replace"));
+          for (const cc of delCcs) cc.getRange("Content").delete();
+          await context.sync();
+
+          // Check that every insertion's words came back, so that a failure
+          // is reported rather than words silently lost.
+          for (const cc of insCcs) cc.load("text");
+          await context.sync();
+          insCcs.forEach((cc, i) => {
+            if (cc.text.trim() !== insText[i].trim()) {
+              throw new Error(`the underlined words “${insText[i].trim()}” were not put back`);
+            }
+          });
+
+          // 4. The controls go; their contents stay. Tracking is off for this,
+          //    or Word records the controls' removal as a tracked change and
+          //    keeps them until it is accepted.
+          doc.changeTrackingMode = Word.ChangeTrackingMode.off;
+          for (const cc of mine) cc.delete(true);
+          await context.sync();
+          doc.changeTrackingMode = Word.ChangeTrackingMode.trackAll;
+          await context.sync();
+          dels += delCcs.length;
+          inss += insCcs.length;
+        }
+      } catch (err) {
+        await cleanUpConversion(before);
+        return conversionFailed(err);
+      }
+      if (!found) return status(`There is no struck-through or underlined text in ${where}.`, "warn");
+      status(`Converted in ${where}: ${plural(dels, "struck passage")} now tracked deletions, ` +
+        `${plural(inss, "underlined passage")} now tracked insertions. Track Changes is on.`);
+    });
+  }
+
+  // How many note numbers (a note's own reference mark) an OOXML package holds.
+  function noteNumbers(xml) {
+    return (xml.match(/<w:(?:footnoteRef|endnoteRef)\/>/g) || []).length;
+  }
+
+  // After a failed conversion: Track Changes back as it was, and any of the
+  // conversion's content controls removed (keeping their text).
+  async function cleanUpConversion(mode) {
+    try {
+      await Word.run(async (context) => {
+        context.document.changeTrackingMode = Word.ChangeTrackingMode.off;
+        const left = await controlsTagged(context, [context.document.body].concat(await noteBodies(context)), TC_TAG);
+        for (const cc of left) cc.delete(true);
+        await context.sync();
+        context.document.changeTrackingMode = mode;
+        await context.sync();
+      });
+    } catch (e) {
+      console.warn("Could not tidy up after the conversion", e);
+    }
+  }
+
   // ---------------------------------------------------------------- plumbing
 
   function status(text, kind) {
@@ -697,5 +1005,7 @@ const Engine = (() => {
     markInsertFromPane: () => queue(() => mark("ins", true)),
     adopted: () => queue(() => resolve(true)),
     failed: () => queue(() => resolve(false)),
+    fromTracked: () => queue(() => fromTracked()),
+    toTracked: () => queue(() => toTracked()),
   };
 })();

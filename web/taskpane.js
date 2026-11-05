@@ -60,7 +60,13 @@
     document.getElementById("all-places").addEventListener("click", () => Engine.toggleAllPlaces());
     document.getElementById("presenter").addEventListener("click", () => Presenter.toggle());
 
-    for (const [id, fn] of Object.entries(ACTIONS)) Office.actions.associate(id, fn);
+    // Where Word has no keyboard shortcuts for add-ins (Office LTSC 2024),
+    // this may fail; the buttons below must still work.
+    try {
+      for (const [id, fn] of Object.entries(ACTIONS)) Office.actions.associate(id, fn);
+    } catch (e) {
+      console.warn("Keyboard shortcuts unavailable", e);
+    }
 
     for (const b of document.querySelectorAll(".level")) {
       b.addEventListener("click", () => Engine.setLevel(Number(b.dataset.level)));

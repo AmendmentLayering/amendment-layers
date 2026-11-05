@@ -80,7 +80,9 @@ section { margin-bottom: 16px; }
 .actions .adopt { color: var(--ok); }
 .actions .fail { color: var(--error); }
 kbd { font: 11px Consolas, monospace; color: var(--muted); white-space: nowrap; }
-.actions .all-places { grid-column: 1 / -1; }
+.actions .all-places, .actions .wide { grid-column: 1 / -1; }
+.actions .wide { flex-direction: column; align-items: flex-start; text-align: left; }
+.actions .wide span { font-size: 11px; color: var(--muted); }
 .actions .all-places span { font-size: 11px; color: var(--muted); }
 .actions .all-places[aria-pressed="true"] { border: 2px solid #1b1b1b; background: #fff4c2; font-weight: 600; }
 
