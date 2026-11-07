@@ -258,7 +258,7 @@ const RESULTS = [
   ["Level voted on", "Adopted", "Failed"],
   ["**3** Secondary", "Its change is made in the primary amendment\u2019s text: words it struck that the primary amendment proposed to insert disappear; its new words take the primary amendment\u2019s formatting. The purple marks disappear.", "The purple marks (strikethrough, italics, shading) disappear; the primary amendment\u2019s text is as it was."],
   ["**2** Primary", "Its change is made in the main motion\u2019s text: words it struck that the main motion proposed to insert disappear; other words it struck are shown with a strikeout line in the main motion. The blue marks disappear.", "The blue marks (double strikethrough, shading) disappear; the main motion\u2019s text is as it was."],
-  ["**1** Main motion", "Struck words are removed; the underline is removed from inserted words.", "Inserted words are removed; struck words have the strikeout line removed from them."],
+  ["**1** Main motion", "Struck words are removed; the underline is removed from inserted words. A wholly struck paragraph goes, section number and all.", "Inserted words are removed; struck words have the strikeout line removed from them."],
 ];
 
 // The manual's footnotes, numbered in the order they appear in the text.
@@ -317,7 +317,8 @@ function quickReference() {
       "**Marked in several places?** Repeat in each place. *Or* click **All places** first, then Adopted or Failed once: it applies everywhere. All places switches itself off after that one vote.",
     ]),
     k.p("**Order:** a secondary amendment is voted before its primary amendment, and a primary amendment before the main motion. If you click in the wrong one, the pane says so and nothing changes.", { before: 60 }),
-    k.table([2200, 4012, 4012], RESULTS),
+    // Without the manual's note on wholly struck paragraphs, to keep to two pages.
+    k.table([2200, 4012, 4012], RESULTS.map((row) => row.map((cell) => cell.replace(/ A wholly struck paragraph goes, section number and all\./, "")))),
 
     k.heading(HeadingLevel.HEADING_1, "Main motion (Level 1)"),
     k.p("Click **1** in the pane, click inside the change\u2019s struck or inserted words, then click **Adopted** or **Failed**. Only that change is resolved; to resolve several together, select them all first."),
@@ -332,7 +333,7 @@ function quickReference() {
       ["\u201cCursor in wrong amendment level\u2026\u201d", "An amendment to this one is still pending here. Resolve the level it names first."],
       ["\u201cCursor is not in the immediately pending amendment\u2026\u201d", "Click inside the text of the amendment it names, then click the button again."],
       ["\u201cSelect the words to strike first\u2026\u201d / \u201cType the words first\u2026\u201d", "Select the words (for Insert, type them first), then click the button again."],
-      ["\u201cWord couldn\u2019t mark that selection\u2026\u201d", "Select only inside, or only outside, the other amendment\u2019s text."],
+      ["\u201cWord couldn\u2019t mark that selection\u2026\u201d", "Select within one paragraph, inside or outside other amendments."],
       ["\u201cTrack Changes is on\u2026\u201d / \u201cThis text has Tracked Changes\u2026\u201d", "Click **Tracked Changes \u2192 manual markup** first."],
     ]),
 
@@ -429,6 +430,7 @@ function manual() {
     k.p("A secondary amendment needs a pending primary amendment to amend; if an attempt is made to insert one where there is no pending primary amendment, the status box explains the error."),
     H2("Striking words"),
     k.p("Select the words in the document, then click **Strike**. It doesn\u2019t matter whether the selection includes spaces before or after the words."),
+    k.p("To strike a whole paragraph, select all of its words\u2014triple-click in the paragraph, or drag across it (see footnote 5)\u2014then click **Strike**. If the paragraph has a section number or letter, it is struck the same way as the words, though without their shading. It doesn\u2019t matter whether the selection includes the paragraph break at the end of the line above or below; the add-in leaves it out. A selection that starts in part of one paragraph and ends in part of another can\u2019t be marked: mark each paragraph\u2019s part separately, or select whole paragraphs."),
     H2("Inserting words"),
     k.p("Type the new words in the document where they belong, select them, then click **Insert**. They take on the level\u2019s formatting, and they are removed if the amendment fails. If nothing is selected when you click Insert, the status box reminds you to type and select the words first."),
     k.p("Striking words that were inserted as part of the same amendment level takes them back out (for example, to correct a typing mistake)."),
@@ -551,7 +553,9 @@ function manual() {
       ["Select the words to strike first, then click Strike.", "Strike was clicked with nothing selected.", "Select the words, then click Strike."],
       ["Type the words first, select them, then click Insert.", "Insert was clicked with nothing selected.", "Type the new words in the document, select them, then click Insert."],
       ["There is no pending Level 2 (primary) amendment for this secondary amendment to amend.", "Level 3 is active but no primary amendment is pending.", "Mark the primary amendment first (click 2)."],
-      ["Word couldn\u2019t mark that selection\u2026", "The selection partly overlaps another amendment\u2019s text.", "Select only inside, or only outside, the other amendment’s text."],
+      ["Word couldn\u2019t mark that selection\u2026", "Word refused to mark the selection, usually because it partly overlaps another amendment\u2019s text or covers parts of more than one paragraph.", "Keep the selection within one paragraph (or select whole paragraphs), and select only inside, or only outside, the other amendment’s text."],
+      ["That selection covers parts of more than one paragraph\u2026", "The selection runs from the middle of one paragraph into another.", "Mark each paragraph\u2019s part separately, or select whole paragraphs (section 4)."],
+      ["Only a paragraph break is selected\u2026", "The selection holds no words, only the break between two paragraphs.", "Select the words, then click the button again."],
       ["Another pending amendment is marked inside this one\u2026", "Another amendment\u2019s text sits inside this one.", "Vote on the inner one first."],
       ["Presenter view is open. Click its title bar\u2026", "The presenter window has opened.", "Move it to the projected screen (section 7)."],
       ["Presenter view couldn\u2019t open\u2026 / This version of Word can\u2019t run Presenter view\u2026", "Word refused to open the window, or is too old for it.", "Close and reopen the pane; check Word\u2019s version (section 12)."],
@@ -630,7 +634,8 @@ function manual() {
     ...k.bullets([
       "**Ctrl+Z** works with the cursor just outside an amendment\u2019s text, not inside it (section 6).",
       "**A selection that partly overlaps** another amendment\u2019s text can\u2019t be marked. Select wholly inside it or wholly outside it.",
-      "**An amendment spanning more than one paragraph** may not mark cleanly; Word may refuse, and the status box will say so.",
+      "**An amendment spanning more than one paragraph** must cover whole paragraphs. A selection that starts in part of one paragraph and ends in part of another can’t be marked; the status box says so (section 4).",
+      "**A struck paragraph’s section number or letter** is shown with strikeout lines like its words but not shaded. If the document’s **last** paragraph is struck in full and the strike is finally adopted, Word keeps an empty line in its place, without a number.",
       "**Main motion:** the add-in recognizes the main motion\u2019s changes only by their underlining and strikethrough. If the document also uses underlining or strikethrough for something else (for example, an underlined heading or defined term), the add-in treats that text as a Level 1 change too: recording a vote on a neighboring change could remove that underline or, on Failed, delete those words. Avoid underlining or striking through text in the document except to show the main motion\u2019s proposed changes.",
       "**All places** applies to amendments marked with the add-in. For the main motion, select the changes instead (section 5).",
       "**Presenter view** shows text rather than Word\u2019s page layout, and keeps a thin title bar (section 7).",

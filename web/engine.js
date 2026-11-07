@@ -48,6 +48,7 @@ const Engine = (() => {
   let onArm = () => {};
   let onChange = () => {};
   let chain = Promise.resolve();
+  let markLog = []; // diagnostic: the last few paragraph-number updates
 
   // ------------------------------------------------------------------ state
 
@@ -296,6 +297,127 @@ const Engine = (() => {
     }
   }
 
+  // ---------------------------------------------------------- paragraph marks
+
+  // Word draws a list number (such as "d.") with the formatting of its
+  // paragraph's end mark. A paragraph struck from end to end gets its number
+  // struck the same way, and the number goes back to plain when the strike
+  // goes. When a Level 1 strike of a whole paragraph is finally adopted, the
+  // paragraph itself is removed, number and all. The document is the record:
+  // nothing about marks is kept in the add-in's state, so Ctrl+Z just works.
+
+  async function parasOf(context, ranges) {
+    const lists = ranges.map((r) => {
+      const ps = r.paragraphs;
+      ps.load("items");
+      return ps;
+    });
+    await context.sync();
+    return lists.flatMap((ps) => ps.items);
+  }
+
+  // The paragraph mark itself. Word's "End" points stop before the mark, so
+  // it is found by searching the paragraph for ^p (Word's code for a
+  // paragraph mark); failing that, from the point before the mark to the
+  // point after the paragraph.
+  async function marksOf(context, paras) {
+    const finds = paras.map((p) => {
+      const found = p.getRange("Whole").search("^p");
+      found.load("items");
+      return found;
+    });
+    await context.sync();
+    return paras.map((p, i) => {
+      const items = finds[i].items;
+      return items.length ? items[items.length - 1] : p.getRange("End").expandTo(p.getRange("After"));
+    });
+  }
+
+  function styleMark(mark, level) {
+    const f = mark.font;
+    if (level === 2) {
+      f.strikeThrough = false;
+      f.doubleStrikeThrough = true;
+    } else {
+      f.doubleStrikeThrough = false;
+      f.strikeThrough = level > 0;
+    }
+    f.color = "#" + AmdOoxml.LEVEL_COLOR[level || 1];
+  }
+
+  // Done in its own syncs, so a Word build that refuses it can't stop the
+  // action itself.
+  // With `repl` (span tag -> new contents, null for emptied), the marks are
+  // styled for the paragraphs as they will be: done before the text
+  // changes, because Word redraws a list number only when its paragraph's
+  // text changes. Without it, for the paragraphs as they are now.
+  async function syncMarks(context, paras, repl) {
+    if (!paras.length) return;
+    const log = [repl ? "before" : "after"];
+    try {
+      const oxs = paras.map((p) => p.getOoxml());
+      await context.sync();
+      const targets = [];
+      paras.forEach((p, i) => {
+        const info = repl ? AmdOoxml.markInfoAfter(oxs[i].value, repl) : AmdOoxml.markInfo(oxs[i].value);
+        log.push(info ? `mark ${info.mark} want ${info.want}${info.empty ? " empty" : ""}` : "no paragraph");
+        if (info && info.want !== info.mark) targets.push({ p, want: info.want });
+      });
+      if (!targets.length) return;
+      const marks = await marksOf(context, targets.map((t) => t.p));
+      targets.forEach((t, i) => styleMark(marks[i], t.want));
+      await context.sync();
+      log.push(`restyled ${targets.length}`);
+    } catch (err) {
+      log.push(`error: ${describeErr(err)}`);
+      console.warn("Could not update paragraph numbers", err);
+    } finally {
+      markLog = markLog.concat(log.join("; ")).slice(-6);
+      note("amendmentLayersLastMarks", markLog);
+    }
+  }
+
+  async function syncMarksIn(context, range, repl) {
+    try {
+      await syncMarks(context, await parasOf(context, [range]), repl);
+    } catch (err) {
+      console.warn("Could not update paragraph numbers", err);
+    }
+  }
+
+  // After a final (Level 1) adoption: paragraphs left with no text whose mark
+  // is struck at Level 1 go entirely. The document's last paragraph can't be
+  // deleted, so it is taken out of its list instead (an empty line with no
+  // number).
+  async function removeEmptied(context) {
+    try {
+      const ps = context.document.body.paragraphs;
+      ps.load("items/text");
+      await context.sync();
+      const last = ps.items[ps.items.length - 1];
+      const cands = ps.items.filter((p) => !/[^\s​]/.test(p.text));
+      if (!cands.length) return;
+      const oxs = cands.map((p) => p.getOoxml());
+      await context.sync();
+      for (const [i, p] of cands.entries()) {
+        const info = AmdOoxml.markInfo(oxs[i].value);
+        if (!info || !info.empty || info.mark !== 1) continue;
+        try {
+          if (p === last) {
+            p.detachFromList();
+          } else {
+            p.delete();
+          }
+          await context.sync();
+        } catch (err) {
+          console.warn("Could not remove an emptied paragraph", err);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not check for emptied paragraphs", err);
+    }
+  }
+
   function overallOutcome(t) {
     const outcomes = new Set(t.resolved.map((r) => r.outcome));
     return outcomes.size === 1 ? [...outcomes][0] : "mixed";
@@ -359,6 +481,8 @@ const Engine = (() => {
   async function mark(kind, fromPane) {
     await Word.run(async (context) => {
       const level = state.activeLevel;
+      const unfit = await fitSelection(context);
+      if (unfit) return status(unfit, "warn");
       const { sel, anchors } = await snapshot(context);
       if (kind === "del" && sel.isEmpty) {
         return status("Select the words to strike first, then click Strike.", "warn");
@@ -380,6 +504,7 @@ const Engine = (() => {
       }
       if (sel.isEmpty) return insertAtCursor(context, anchors, level, thread);
 
+      const paras = await parasOf(context, [sel]);
       const skip = skipTags(level, thread);
       const transform = (xml, ownTag) => kind === "del"
         ? AmdOoxml.markDelete(xml, level, skip, ownTag)
@@ -393,6 +518,7 @@ const Engine = (() => {
         if (out.empty) sel.delete();
         else sel.insertOoxml(out.xml, "Replace").select("End");
         await context.sync();
+        await syncMarks(context, paras);
         await dropEmptyAnchors(context);
         saveState();
         return status(`${kind === "del" ? "Struck" : "Marked inserted"} at ${LEVEL_NAMES[level]}.`);
@@ -410,11 +536,13 @@ const Engine = (() => {
       await hidePlaceholders(context, [cc]);
 
       const out = transform(ox.value, tag);
+      await syncMarksIn(context, cc.getRange("Whole"), { [tag]: out.empty ? null : out.xml });
       if (out.empty) {
         // Striking only this level's own insertion takes it back out; there
         // is no span left to record.
         cc.delete(false);
         await context.sync();
+        await syncMarks(context, paras);
         await dropEmptyAnchors(context);
         saveState();
         return status(`Removed at ${LEVEL_NAMES[level]}.`);
@@ -422,6 +550,7 @@ const Engine = (() => {
       cc.insertOoxml(out.xml, "Replace");
       cc.getRange("Content").select("End");
       await context.sync();
+      await syncMarksIn(context, cc.getRange("Whole"));
 
       // Text marked as an insertion is the amendment's own new wording (typed,
       // then selected and marked), so failing the amendment removes it.
@@ -431,6 +560,72 @@ const Engine = (() => {
       saveState();
       status(`${kind === "del" ? "Struck" : "Marked inserted"} at ${LEVEL_NAMES[level]}.`);
     });
+  }
+
+  // Word can put a content control around words inside one paragraph or
+  // around whole paragraphs, but not around part of two or more ("Rich text
+  // controls cannot be applied here"). A mouse drag often picks up the
+  // paragraph mark at the end of the line above, or the very start of the
+  // line below; drop those stray edges and select what is left. Returns a
+  // message when the selection still covers parts of more than one paragraph.
+  //
+  // Word puts a range's "End" point before a paragraph mark even when the
+  // range includes it, so whether the selection takes in the mark is read
+  // from its text, which then ends with a carriage return.
+  async function fitSelection(context) {
+    const sel = context.document.getSelection();
+    sel.load("isEmpty,text");
+    const paras = sel.paragraphs;
+    paras.load("items");
+    await context.sync();
+    const n = paras.items.length;
+    if (sel.isEmpty || !n) return null;
+    const withMark = /[\r\n]$/.test(sel.text);
+    note("amendmentLayersLastFit", { paragraphs: n, withMark, tail: JSON.stringify(sel.text.slice(-3)) });
+
+    let i0 = 0;
+    let i1 = n - 1;
+    if (n > 1) {
+      const edges = [paras.items[0], paras.items[n - 1]].map((p) => {
+        const part = p.getRange("Whole").intersectWithOrNullObject(sel);
+        part.load("text");
+        return part;
+      });
+      await context.sync();
+      const blank = (r) => r.isNullObject || !/[^\r\n\u0007]/.test(r.text);
+      if (blank(edges[0])) i0 = 1;
+      if (blank(edges[1])) i1 = n - 2;
+      if (i1 < i0) return "Only a paragraph break is selected. Select the words first.";
+    }
+    const first = paras.items[i0];
+    const last = paras.items[i1];
+    const start = i0 === 0 ? sel.getRange("Start") : first.getRange("Start");
+
+    if (i0 === i1) {
+      // Within one paragraph the span leaves out the paragraph's end mark
+      // (a triple-click selects it); the mark, which carries the paragraph's
+      // number, is styled separately.
+      if (i0 === 0 && i1 === n - 1 && !withMark) return null;
+      const end = i1 === n - 1 && !withMark ? sel.getRange("End") : last.getRange("Content").getRange("End");
+      start.expandTo(end).select();
+      await context.sync();
+      return null;
+    }
+
+    // Still more than one paragraph: fine only if they are whole paragraphs.
+    const atStart = start.compareLocationWith(first.getRange("Start"));
+    const atEnd = i1 === n - 1 && !withMark
+      ? sel.getRange("End").compareLocationWith(last.getRange("Content").getRange("End"))
+      : null;
+    await context.sync();
+    if (atStart.value !== "Equal" || (atEnd && atEnd.value !== "Equal")) {
+      return "That selection covers parts of more than one paragraph, which Word can't mark as one piece. " +
+        "Mark each paragraph's part separately, or select whole paragraphs.";
+    }
+    // expandTo a whole range (not its End point) so the last mark is included.
+    first.getRange("Start").expandTo(last.getRange("Whole")).select();
+    await context.sync();
+    return null;
   }
 
   // Insert key with nothing selected: put a one-space placeholder in the
@@ -531,6 +726,28 @@ const Engine = (() => {
         return status("Another pending amendment is marked inside this one. Resolve it first.", "error");
       }
 
+      let outs = null;
+      if (adopted) {
+        const skip = skipTags(t.level, t);
+        outs = mine.map((m) => AmdOoxml.fold(m.ox.value, t.level, skip, m.anchor.tag, false));
+        const problems = outs.flatMap((o) => o.problems);
+        if (problems.length) return status(`Nothing changed: ${problems[0]}`, "error");
+      }
+
+      // Paragraph numbers are styled before the text changes (see
+      // syncMarks), from what each span will hold after the vote. A final
+      // adoption instead marks every wholly struck paragraph as it is now,
+      // so removeEmptied can take out the paragraphs it empties.
+      const final = adopted && t.level === 1;
+      const paras = await parasOf(context, mine.map((m) => m.range));
+      const repl = {};
+      mine.forEach((m, i) => {
+        repl[m.anchor.tag] = adopted
+          ? (outs[i].empty ? null : outs[i].xml)
+          : (m.anchor.prior ? AmdOoxml.forInsert(m.anchor.prior, m.anchor.tag) : null);
+      });
+      await syncMarks(context, paras, final ? null : repl);
+
       // Every span this vote resolves loses its content control. If Ctrl+Z
       // later brings one back, reviveUndoneVotes treats it as pending again.
       const outcome = adopted ? "adopted" : "failed";
@@ -538,11 +755,6 @@ const Engine = (() => {
       const holders = [];
 
       if (adopted) {
-        const skip = skipTags(t.level, t);
-        const outs = mine.map((m) => AmdOoxml.fold(m.ox.value, t.level, skip, m.anchor.tag, false));
-        const problems = outs.flatMap((o) => o.problems);
-        if (problems.length) return status(`Nothing changed: ${problems[0]}`, "error");
-
         mine.forEach((m, i) => {
           const out = outs[i];
           if (out.empty) return m.cc.delete(false);
@@ -582,6 +794,8 @@ const Engine = (() => {
       }
       await context.sync();
       await hidePlaceholders(context, holders);
+      await syncMarks(context, paras);
+      if (final) await removeEmptied(context);
 
       // Spans of these places that are no longer in the document are dropped
       // along with the ones just resolved.
@@ -624,9 +838,13 @@ const Engine = (() => {
     const out = adopted ? AmdOoxml.fold(ox.value, 1, [], null, true) : AmdOoxml.failUntracked(ox.value, []);
     if (out.problems && out.problems.length) return status(`Nothing changed: ${out.problems[0]}`, "error");
     if (!out.changed) return status("No Level 1 markup in this passage.", "warn");
+    const paras = await parasOf(context, [range]);
+    if (adopted) await syncMarks(context, paras);
     if (out.empty) range.delete();
     else range.insertOoxml(out.xml, "Replace");
     await context.sync();
+    await syncMarks(context, paras);
+    if (adopted) await removeEmptied(context);
     status(`Level 1 change ${adopted ? "adopted" : "failed"} in this selection.`);
   }
 
@@ -647,9 +865,13 @@ const Engine = (() => {
         "Click inside its text and resolve it first.", "error");
     }
     if (!out.changed) return status("No Level 1 change at the cursor. Click inside its struck or inserted words.", "warn");
+    // The whole paragraph's text is replaced (no span tag matches "(all)").
+    await syncMarks(context, [para], adopted ? null : { "(all)": out.empty ? null : out.xml });
     if (out.empty) range.delete();
     else range.insertOoxml(out.xml, "Replace");
     await context.sync();
+    await syncMarks(context, [para]);
+    if (adopted) await removeEmptied(context);
     status(`Level 1 change ${adopted ? "adopted" : "failed"}.`);
   }
 
@@ -947,10 +1169,30 @@ const Engine = (() => {
     onArm(on);
   }
 
-  function describeError(err) {
+  // Diagnostic: a short record in the document's add-in settings, invisible
+  // in Word, that test/dump-docx.ps1 can read from a saved copy.
+  function note(key, value) {
+    try {
+      Office.context.document.settings.set(key, { at: new Date().toISOString(), value });
+      Office.context.document.settings.saveAsync();
+    } catch (e) {
+      console.warn("Could not record a diagnostic note", e);
+    }
+  }
+
+  // An Office.js error's message, with the Word call that failed when known.
+  function describeErr(err) {
     const msg = (err && err.message) || String(err);
+    const where = err && err.debugInfo && err.debugInfo.errorLocation;
+    return where ? `${msg} (at ${where})` : msg;
+  }
+
+  function describeError(err) {
+    note("amendmentLayersLastError", describeErr(err));
+    const msg = describeErr(err);
     if (/content control|InvalidArgument|GeneralException/i.test(msg)) {
-      return "Word couldn't mark that selection. If it partly overlaps another amendment's text, select only inside it or only outside it.";
+      return "Word couldn't mark that selection. Make sure it doesn't cover parts of more than one paragraph, " +
+        "or only partly overlap another amendment's text (select only inside it or only outside it).";
     }
     return `Something went wrong: ${msg}`;
   }

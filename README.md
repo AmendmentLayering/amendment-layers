@@ -73,6 +73,14 @@ strikethrough, italics and shading, returning the words to how they were.
 Adopted removes the words if the level above had inserted them; otherwise they
 become a strike at the level above.
 
+**Striking a whole paragraph.** Select its words (a triple-click is fine; a
+drag that catches the end of the line above is fine too). When every word of a
+paragraph is struck, its list number or letter is struck in the same style.
+When the strike finally passes at Level 1, the whole paragraph goes, number and
+all. If the strike fails, the number goes back to plain. A selection that
+covers part of two or more paragraphs can't be marked as one piece: mark each
+paragraph's part separately, or select whole paragraphs.
+
 **Which amendment Adopted/Failed acts on.** The most recently created pending
 amendment whose text contains the cursor. A cursor right at the edge of an
 amendment's text counts as inside it. Its struck text and its new words both

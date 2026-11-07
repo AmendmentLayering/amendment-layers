@@ -542,6 +542,64 @@
     return changed;
   }
 
+  // ---------------------------------------------------------- paragraph marks
+
+  // Word draws a list number (or letter) with the formatting of its
+  // paragraph's end mark, which sits outside any span. For one paragraph:
+  //   mark   the deletion level the mark is styled at now (0: not struck)
+  //   want   the level it should have: the paragraph's text struck from end
+  //          to end gives its level (the highest, if levels are mixed);
+  //          anything else 0. An emptied paragraph keeps its current mark.
+  //   empty  no visible text left
+  function markInfoDoc(doc) {
+    const p = paragraphs(doc, new Set(), new Set())[0];
+    if (!p) return null;
+    const markRun = wEl(doc, "r");
+    const markRPr = kid(kid(p, "pPr"), "rPr");
+    if (markRPr) markRun.appendChild(markRPr.cloneNode(true));
+    const m = classify(markRun);
+    const mark = m.kind === "del" ? m.level : 0;
+
+    const visible = runsWithSpans(p, new Set()).map((it) => it.r).filter((r) =>
+      wVal(kid(kid(r, "rPr"), "rStyle")) !== "PlaceholderText" &&
+      (/[^\s​]/.test(runText(r)) ||
+        kids(r).some((c) => ["drawing", "object", "pict", "sym"].includes(c.localName))));
+    if (!visible.length) return { mark, want: mark, empty: true };
+    const levels = visible.map(classify);
+    const want = levels.every((c) => c.kind === "del") ? Math.max(...levels.map((c) => c.level)) : 0;
+    return { mark, want, empty: false };
+  }
+
+  // The same, for the paragraph as it will be once some spans get new
+  // contents: `repl` maps a span's tag to its new package (null: emptied).
+  // Word redraws a list number only when the paragraph's text changes, so
+  // the mark must be styled before the text changes, from this prediction.
+  // A span whose control is not in the paragraph's package wraps the whole
+  // paragraph (Word makes a span covering all of a paragraph's text a
+  // block-level control), so its new contents replace all the runs.
+  function markInfoAfterDoc(doc, repl) {
+    const p = paragraphs(doc, new Set(), new Set())[0];
+    if (!p) return null;
+    const runsOf = (xml) => (xml
+      ? Array.from(documentBody(parse(xml)).getElementsByTagNameNS(W, "r")).map((r) => doc.importNode(r, true))
+      : []);
+    const refill = (host, runs) => {
+      for (const c of kids(host)) if (c.localName !== "pPr") host.removeChild(c);
+      for (const r of runs) host.appendChild(r);
+    };
+    let hit = false;
+    for (const sdt of Array.from(doc.getElementsByTagNameNS(W, "sdt"))) {
+      const tag = sdtTag(sdt);
+      if (!(tag in repl)) continue;
+      const content = kid(sdt, "sdtContent");
+      if (!content) continue;
+      hit = true;
+      refill(kid(content, "p") || content, runsOf(repl[tag]));
+    }
+    if (!hit && Object.keys(repl).length) refill(p, Object.values(repl).flatMap(runsOf));
+    return markInfoDoc(doc);
+  }
+
   // ------------------------------------------------------------ presenter view
 
   const HTML_ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
@@ -921,6 +979,24 @@
       }
       return !Array.from(scope.getElementsByTagNameNS(W, "r")).some((r) =>
         hasVisibleContent(r) && wVal(kid(kid(r, "rPr"), "rStyle")) !== "PlaceholderText");
+    },
+
+    /**
+     * For one paragraph's OOXML: { mark, want, empty }, where mark is the
+     * deletion level its end mark (and so its list number) is styled at,
+     * want the level it should be styled at, and empty whether any visible
+     * text is left. Null if the package holds no paragraph.
+     */
+    markInfo(xml) {
+      return markInfoDoc(parse(xml));
+    },
+
+    /**
+     * markInfo for the paragraph once its spans get new contents: `repl`
+     * maps a span's tag to its new package, or to null if it will be empty.
+     */
+    markInfoAfter(xml, repl) {
+      return markInfoAfterDoc(parse(xml), repl || {});
     },
 
     /**
