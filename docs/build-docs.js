@@ -649,7 +649,16 @@ function manual() {
 
     H1("15. Technical details and license"),
     k.p(`The complete project, including the code, its tests and other technical files, is publicly available at ${REPO_TEXT}, for example for cybersecurity vetting. Technical details (hosting, publishing updates, the code and its tests) are in its **README.md** file. The add-in may be used under the terms in its **LICENSE.md** file.`),
-    k.p(`The web files that Word runs are published at **${SITE}**. The project’s **check-live.ps1** script confirms that the files published there are the same as those in the project. Questions may be sent to the developer at thomasbalchparliamentarian@gmail.com.`),
+    k.p(`The web files that Word runs are published at **${SITE}**. The project’s **check-live.ps1** script confirms that the files published there are the same as those in the project. Its **SECURITY.md** file (Cybersecurity Vetting of the Amendment Layers Word Add-in) explains, for an organization’s cybersecurity team, what the add-in sends and stores and how the team can host a vetted copy on its own server.`),
+    H2("Questions, suggestions and security concerns"),
+    k.p("Questions, problems and suggestions can be raised by opening an **Issue** in the project on GitHub. An Issue is a public note that anyone can read; the developer is notified by email and replies there. A free GitHub account is needed."),
+    ...k.steps([
+      "Sign in at **github.com**, or create a free account there.",
+      `Go to ${REPO_TEXT}, click the **Issues** tab, then **New issue**.`,
+      "Give the issue a title, describe the question or problem (including the Microsoft Word version and what happened), and submit it.",
+    ]),
+    k.p("Because **Issues** are public, do not include confidential information, such as the text of a client’s document. A suspected security problem should not be posted as an Issue, where anyone could read it before it is fixed. Instead, on the project’s **Security** tab, click **Report a vulnerability**. Only the developer sees the report, and is notified by email.", { before: 80 }),
+    k.p("A **Pull Request** proposes specific changes to the code or documentation and is meant for programmers. They copy the project into their own GitHub account, make the changes there, and ask for them to be added. Nothing in the add-in changes unless the developer reviews and accepts them."),
   ];
 
   return new Document({

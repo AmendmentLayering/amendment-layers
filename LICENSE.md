@@ -68,6 +68,7 @@ A “noncommercial purpose” is any purpose that is not a commercial purpose. U
 “Software” is the software the licensor makes available under these terms and includes the documentation accompanying the software:
 
 - README.md;
+- Cybersecurity Vetting of the Amendment Layers Word Add-in (SECURITY.md);
 - Amendment Layers – User Manual; and
 - Amendment Layers – Quick Reference.
 

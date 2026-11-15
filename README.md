@@ -150,7 +150,10 @@ powershell -ExecutionPolicy Bypass -File check-live.ps1
 
 It downloads each file from the site, compares it with the copy in `web`, and
 lists any that differ; it changes nothing. A reviewer who has vetted this copy
-can run it to confirm that the site runs the code they reviewed. Also worth
+can run it to confirm that the site runs the code they reviewed. For an
+organization's cybersecurity team, `SECURITY.md` explains what the add-in
+sends and stores, how to host a vetted copy in-house, and how to report a
+security concern privately. Also worth
 doing: two-factor sign-in on the Netlify, GitHub and email accounts, Netlify's
 deploy notifications (an email for every publish), and read-only access for
 staff to the shared folder holding `manifest.xml`, which decides which site
@@ -319,3 +322,13 @@ License, in the `LICENSE.md` file. Anyone who passes on a copy of any part of
 it must pass on that file too (paragraph 4). The license's text is kept in
 `docs/build-license.js`, which writes both `LICENSE.md` and a Word copy for
 review; edit it there and run `node docs/build-license.js`.
+
+## Questions and security concerns
+
+Questions, problems and suggestions: open an Issue on this repository's
+**Issues** tab. Issues are public, so leave out anything confidential. A
+suspected security problem: report it privately with **Report a
+vulnerability** on the **Security** tab, not as an Issue (see `SECURITY.md`).
+`SECURITY.md` and its Word copy for clients are written by
+`docs/build-security.js`; edit the text there and run
+`node docs/build-security.js`.
