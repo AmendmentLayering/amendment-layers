@@ -544,6 +544,15 @@
 
   // ---------------------------------------------------------- paragraph marks
 
+  // A paragraph's runs that show something: not placeholder text, spaces or
+  // zero-width spaces alone.
+  function visibleRuns(p) {
+    return runsWithSpans(p, new Set()).map((it) => it.r).filter((r) =>
+      wVal(kid(kid(r, "rPr"), "rStyle")) !== "PlaceholderText" &&
+      (/[^\s​]/.test(runText(r)) ||
+        kids(r).some((c) => ["drawing", "object", "pict", "sym"].includes(c.localName))));
+  }
+
   // Word draws a list number (or letter) with the formatting of its
   // paragraph's end mark, which sits outside any span. For one paragraph:
   //   mark   the deletion level the mark is styled at now (0: not struck)
@@ -560,10 +569,7 @@
     const m = classify(markRun);
     const mark = m.kind === "del" ? m.level : 0;
 
-    const visible = runsWithSpans(p, new Set()).map((it) => it.r).filter((r) =>
-      wVal(kid(kid(r, "rPr"), "rStyle")) !== "PlaceholderText" &&
-      (/[^\s​]/.test(runText(r)) ||
-        kids(r).some((c) => ["drawing", "object", "pict", "sym"].includes(c.localName))));
+    const visible = visibleRuns(p);
     if (!visible.length) return { mark, want: mark, empty: true };
     const levels = visible.map(classify);
     const want = levels.every((c) => c.kind === "del") ? Math.max(...levels.map((c) => c.level)) : 0;
@@ -772,11 +778,244 @@
       html += piece.html;
       text += piece.text;
     }
+    const num = state.numbers ? numberHtml(state.numbers[state.texts.length]) : "";
+    if (num) html = num + html;
     if (!html) classes.push("empty");
     const i = state.texts.length;
     state.texts.push(text);
     const styleAttr = styles.length ? ` style="${styles.join(";")}"` : "";
     return `<p class="${classes.join(" ")}" data-i="${i}"${styleAttr}>${html || "&nbsp;"}</p>`;
+  }
+
+  // ------------------------------------------------------------- list numbers
+  //
+  // Word's automatic numbers (Article IV, Section 3., (d)) are not text, so
+  // Presenter view draws them itself. Word reports each paragraph's number as
+  // it shows it now (`text`), which counts every paragraph in the document,
+  // pending insertions and struck paragraphs alike. From the numbering
+  // definitions, the add-in also works out:
+  //   orig  the number before the pending amendments: paragraphs wholly
+  //         inserted by a pending amendment don't count
+  //   prop  the number if the pending amendments are adopted: paragraphs
+  //         wholly struck don't count
+  //   word  the number Word shows (everything counts), to check the
+  //         arithmetic against Word's own before orig and prop are used
+
+  function partRoot(doc, name, el) {
+    for (const part of Array.from(doc.getElementsByTagNameNS(PKG, "part"))) {
+      if (part.getAttributeNS(PKG, "name") === name) return part.getElementsByTagNameNS(W, el)[0] || null;
+    }
+    return null;
+  }
+
+  function lvlDef(l) {
+    const text = kid(l, "lvlText");
+    const start = wVal(kid(l, "start"));
+    return {
+      start: start == null ? 1 : Number(start),
+      fmt: wVal(kid(l, "numFmt")) || "decimal",
+      text: text ? text.getAttributeNS(W, "val") : "",
+      restart: wVal(kid(l, "lvlRestart")),
+      lgl: isOn(kid(l, "isLgl")),
+      pStyle: wVal(kid(l, "pStyle")),
+    };
+  }
+
+  function numberingDefs(doc) {
+    const numbering = partRoot(doc, "/word/numbering.xml", "numbering");
+    const stylesRoot = partRoot(doc, "/word/styles.xml", "styles");
+    const abstract = {};
+    const nums = {};
+    const styles = {};
+    let defaultStyle = null;
+    for (const a of kids(numbering, "abstractNum")) {
+      const lvls = {};
+      for (const l of kids(a, "lvl")) lvls[Number(l.getAttributeNS(W, "ilvl"))] = lvlDef(l);
+      abstract[a.getAttributeNS(W, "abstractNumId")] = { lvls, link: wVal(kid(a, "numStyleLink")) };
+    }
+    for (const n of kids(numbering, "num")) {
+      const overrides = {};
+      for (const o of kids(n, "lvlOverride")) {
+        const so = wVal(kid(o, "startOverride"));
+        const l = kid(o, "lvl");
+        overrides[Number(o.getAttributeNS(W, "ilvl"))] = { start: so == null ? null : Number(so), lvl: l ? lvlDef(l) : null };
+      }
+      nums[n.getAttributeNS(W, "numId")] = { abs: wVal(kid(n, "abstractNumId")), overrides };
+    }
+    for (const s of kids(stylesRoot, "style")) {
+      if (s.getAttributeNS(W, "type") !== "paragraph") continue;
+      const id = s.getAttributeNS(W, "styleId");
+      const np = kid(kid(s, "pPr"), "numPr");
+      styles[id] = {
+        basedOn: wVal(kid(s, "basedOn")),
+        numId: np ? wVal(kid(np, "numId")) : null,
+        ilvl: np ? wVal(kid(np, "ilvl")) : null,
+      };
+      if (["1", "true", "on"].includes(s.getAttributeNS(W, "default"))) defaultStyle = id;
+    }
+    // A list defined through a numbering style: its abstractNum only links to
+    // the style, whose list holds the levels.
+    const absOf = (numId) => {
+      let id = nums[numId] && nums[numId].abs;
+      for (let hops = 0; id != null && abstract[id] && abstract[id].link && hops < 5; hops++) {
+        const st = styles[abstract[id].link];
+        const via = st && st.numId && nums[st.numId];
+        if (!via || via.abs === id) break;
+        id = via.abs;
+      }
+      return id;
+    };
+    return { abstract, nums, styles, defaultStyle, absOf };
+  }
+
+  // The list and level a paragraph's number comes from: its own numPr, else
+  // its style's (through basedOn). numId 0 switches numbering off.
+  function listOf(p, defs) {
+    const pPr = kid(p, "pPr");
+    const np = kid(pPr, "numPr");
+    let numId = np ? wVal(kid(np, "numId")) : null;
+    let ilvl = np ? wVal(kid(np, "ilvl")) : null;
+    let styleId = wVal(kid(pPr, "pStyle")) || defs.defaultStyle;
+    const ownStyle = styleId;
+    for (let hops = 0; styleId && defs.styles[styleId] && hops < 20 && (numId == null || ilvl == null); hops++) {
+      const st = defs.styles[styleId];
+      if (numId == null && st.numId != null) numId = st.numId;
+      if (ilvl == null && st.ilvl != null) ilvl = st.ilvl;
+      styleId = st.basedOn;
+    }
+    if (numId == null || numId === "0" || !defs.nums[numId]) return null;
+    const abs = defs.absOf(numId);
+    const a = defs.abstract[abs];
+    if (!a) return null;
+    if (ilvl == null) {
+      const linked = Object.keys(a.lvls).find((k) => a.lvls[k].pStyle && a.lvls[k].pStyle === ownStyle);
+      ilvl = linked != null ? linked : 0;
+    }
+    return { numId, abs, level: Number(ilvl) };
+  }
+
+  function formatListNumber(n, fmt) {
+    switch (fmt) {
+      case "none": return "";
+      case "decimalZero": return n < 10 ? `0${n}` : String(n);
+      case "ordinal": {
+        const t = n % 100;
+        const suffix = t >= 11 && t <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
+        return `${n}${suffix}`;
+      }
+      case "lowerRoman": case "upperRoman": case "lowerLetter": case "upperLetter":
+        return formatNoteNumber(n, fmt);
+      default: return String(n);
+    }
+  }
+
+  // Word's numbering of the given paragraphs, leaving out those `skip`
+  // rejects. Counters belong to the abstract list, so paragraphs of
+  // different w:num entries for one abstract list number on together; a
+  // num's startOverride applies where that num is first used.
+  function countLists(items, defs, skip) {
+    const lists = {};
+    const usedNums = new Set();
+    return items.map((it) => {
+      if (!it.list || skip(it)) return null;
+      const { numId, abs, level } = it.list;
+      const a = defs.abstract[abs];
+      const num = defs.nums[numId];
+      const lvl = (d) => (num.overrides[d] && num.overrides[d].lvl) || a.lvls[d] || { start: 1, fmt: "decimal", text: "", restart: null };
+      const st = lists[abs] || (lists[abs] = { count: {}, used: {} });
+      if (!usedNums.has(numId)) {
+        usedNums.add(numId);
+        for (const d of Object.keys(num.overrides)) {
+          const o = num.overrides[d];
+          if (o.start != null) { st.count[d] = o.start - 1; st.used[d] = true; }
+        }
+      }
+      const me = lvl(level);
+      st.count[level] = (st.used[level] ? st.count[level] : me.start - 1) + 1;
+      st.used[level] = true;
+      for (let d = level + 1; d < 9; d++) {
+        const r = lvl(d).restart;
+        if (r == null || (r !== "0" && level <= Number(r) - 1)) st.used[d] = false;
+      }
+      if (me.fmt === "bullet") return "•";
+      return me.text.replace(/%([1-9])/g, (_, k) => {
+        const d = Number(k) - 1;
+        const v = st.used[d] ? st.count[d] : lvl(d).start;
+        return formatListNumber(v, me.lgl && d !== level ? "decimal" : lvl(d).fmt);
+      });
+    });
+  }
+
+  // Each paragraph in presenter order, with its list and its amendment
+  // status: "del" wholly struck, "ins" wholly inserted, "gone" an insertion
+  // wholly struck, or null; `level` is the amendment level concerned.
+  function listItemsDoc(doc) {
+    const defs = numberingDefs(doc);
+    const out = [];
+    (function walk(node) {
+      for (let c = node.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType !== 1 || c.namespaceURI !== W) continue;
+        if (c.localName === "p") out.push(c);
+        else if (c.localName === "tbl") { for (const tr of kids(c, "tr")) for (const tc of kids(tr, "tc")) walk(tc); }
+        else if (c.localName === "sdt") { const content = kid(c, "sdtContent"); if (content) walk(content); }
+      }
+    })(documentBody(doc));
+    const items = out.map((p) => {
+      const list = listOf(p, defs);
+      const cls = visibleRuns(p).map(classify);
+      let status = null;
+      let level = 0;
+      if (cls.length && cls.every((c) => c.kind === "del")) {
+        status = cls.every((c) => c.under) ? "gone" : "del";
+        level = Math.max(...cls.map((c) => c.level));
+      } else if (cls.length && cls.every((c) => c.kind === "ins" || c.under)) {
+        status = "ins";
+        level = Math.max(...cls.map((c) => (c.kind === "ins" ? c.level : c.under)));
+      }
+      return { list, status, level };
+    });
+    return { items, defs };
+  }
+
+  function listNumbersDoc(doc) {
+    const { items, defs } = listItemsDoc(doc);
+    const word = countLists(items, defs, () => false);
+    const orig = countLists(items, defs, (it) => it.status === "ins" || it.status === "gone");
+    const prop = countLists(items, defs, (it) => it.status === "del" || it.status === "gone");
+    // The level shown on a changed number: the highest level among the
+    // pending paragraphs earlier in the same list at this level or above,
+    // since the list last moved on at a higher level.
+    const cause = {};
+    return items.map((it, i) => {
+      if (!it.list) return null;
+      const { abs, level } = it.list;
+      const c = cause[abs] || (cause[abs] = []);
+      let shown = 0;
+      for (let d = 0; d <= level; d++) shown = Math.max(shown, c[d] || 0);
+      if (it.status) c[level] = Math.max(c[level] || 0, it.level);
+      else for (let d = level + 1; d < 9; d++) c[d] = 0;
+      return { word: word[i], orig: orig[i], prop: prop[i], status: it.status, level: it.level, cause: shown };
+    });
+  }
+
+  // A paragraph's number for Presenter view. `n.text` is Word's own; with
+  // `n.orig`/`n.prop` (undefined when the arithmetic didn't match Word's) a
+  // number that pending amendments would change shows old struck, new
+  // inserted, in the colors of the level concerned.
+  function numberHtml(n) {
+    if (!n || n.text == null) return "";
+    const show = (s, cls) => (s ? `<span class="num${cls ? ` ${cls}` : ""}">${esc(s)}</span>` : "");
+    const gap = "<span class=\"num-gap\"> </span>";
+    const known = n.orig !== undefined;
+    let html;
+    if (n.status === "del" || n.status === "gone") html = show(known && n.orig != null ? n.orig : n.text, `a-del${n.level}`);
+    else if (n.status === "ins") html = show(known && n.prop != null ? n.prop : n.text, `a-ins${n.level}`);
+    else if (!known || n.orig === n.prop) html = show(known ? n.prop : n.text, "");
+    else {
+      const lv = n.cause || 1;
+      html = [show(n.orig, `a-del${lv}`), show(n.prop, `a-ins${lv}`)].filter(Boolean).join(" ");
+    }
+    return html ? html + gap : "";
   }
 
   // --------------------------------------------------------- package handling
@@ -1013,6 +1252,8 @@
      * note's text (whose package may lack the document's settings) the same.
      */
     presenterView(xml, opts = {}) {
+      // opts.numbers[i]: paragraph i's list number, { text, orig, prop,
+      // status, level, cause } (see numberHtml), or null.
       const doc = parse(xml);
       const fmt = opts.fmt || noteFormats(doc);
       const state = {
@@ -1021,6 +1262,7 @@
         notes: opts.notesBefore ? { ...opts.notesBefore } : null,
         current: opts.current || null,
         ownNote: opts.ownNote || null,
+        numbers: opts.numbers || null,
       };
       const html = presenterBlocks(documentBody(doc), state);
       const note = opts.ownNote || opts.current;
@@ -1038,6 +1280,16 @@
      */
     markupToTracked(xml, prefix, counter) {
       return run(xml, null, [], (doc) => markupToTrackedDoc(doc, prefix, counter));
+    },
+
+    /**
+     * Every paragraph's list number, in presenter order (paragraphs inside
+     * tables and content controls included): null for a paragraph outside
+     * any list, else { word, orig, prop, status, level, cause } (see the
+     * "list numbers" section).
+     */
+    listNumbers(xml) {
+      return listNumbersDoc(parse(xml));
     },
 
     /** Smallest package that still restores the span (stored as priorText). */

@@ -46,7 +46,10 @@ const LEVEL_RUN = {
 };
 
 const SITE = "https://amendment-layers.netlify.app";
-const PROJECT = "C:\\Users\\burke\\Code by Claude\\amendment-display-addin-v4";
+// The public GitHub repository holding the complete project. Until its
+// address is filled in, the manual shows a bracketed placeholder.
+const REPO = "https://github.com/AmendmentLayering/amendment-layers";
+const REPO_TEXT = REPO ? `**${REPO}**` : "**[GitHub address to be added]**";
 
 function shade(level) {
   return { type: ShadingType.CLEAR, color: "auto", fill: SHADE[level] };
@@ -482,7 +485,7 @@ function manual() {
     k.p("Word may record one action of the add-in as several undo steps, so more than one Ctrl+Z is often needed. The text can look odd between steps; keep pressing until it is as before."),
 
     H1("7. Presenter view: the projected screen"),
-    k.p("Presenter view opens a separate window for the screen the members see. It shows only the document, in large type, with each level\u2019s formatting and a small legend along the bottom; no ribbon, pane or page edges. It follows your work: the paragraph containing the cursor stays in the middle of the window, marked by a thin gray bar, and the window updates immediately after every click and within a second of typing."),
+    k.p("Presenter view opens a separate window for the screen the members see. It shows only the document, in large type, with each level\u2019s formatting and a small legend along the bottom; no ribbon, pane or page edges. It follows your work: the paragraph containing the cursor stays in the middle of the window, marked by a thin gray bar, and the window updates rapidly after every click and within a second or so of typing."),
     H2("Setting up the screens"),
     k.p("The computer needs a second screen (either a monitor or a digital projector) set to **extend** the desktop, not duplicate it: press **Windows key + P** and choose **Extend**. Where a projector is used to show the second monitor\u2019s picture, that pair can be duplicated: search Windows for \u201cDuplicate or extend to a connected display\u201d and, when it comes up, click **Identify** to see the numbers assigned to the second monitor and the projector, then use the drop-down to choose the setting that duplicates those two displays."),
     H2("Opening it and moving it to the projected screen"),
@@ -502,12 +505,13 @@ function manual() {
     H2("While presenting"),
     ...k.bullets([
       "Make all amendment changes in Word using the original screen; do not attempt to make any directly on the projected screen.",
-      "To show a different part of the document, click there in Word; the window on the other screen follows.",
+      "To show a different part of the document, click there in Word; the window on the other screen follows. In a long document the window may take several seconds to show the passage the first time; after that it keeps up as usual.",
+      "**Section numbers and letters:** Word’s automatic numbers and letters (for example Article IV, Section 3., (d)) appear before each paragraph, as in Word. While a strike or insertion of a whole paragraph is pending, the window also shows how the numbering would change if it were adopted: that paragraph’s own number or letter is struck or underlined in its level’s style, and each later number or letter that would change shows the old one struck and the new one underlined, for example [[del1:(d)]] [[ins1:(c)]]. The numbers and letters in Word itself don’t change until the result of the vote is recorded. With amendments pending at more than one level, the window shows the numbering as if all of them were adopted. A paragraph only partly struck keeps its number or letter.",
       "**Footnotes and endnotes:** click in a footnote or endnote in Word, and the window shows the paragraph containing that note’s number (highlighted), with the note in a shaded panel below it, both with their amendments. If both don’t fit, the window keeps the part of the note you are working in visible; **A−** makes room for both. Click back in the main text to return to it. Switching back and forth only changes what the window shows; pending amendments in the note and in the main text are unaffected.",
       "**Text size and legend:** move the mouse over the presenter window in the projected screen and controls appear in its top-right corner: **A\u2212** decreases and **A+** increases the text size (remembered for next time), and **Legend** shows or hides the legend. With the presenter window active, the **\u2212**, **+** and **L** keys do the same.",
       "**To close it:** click **Presenter view** in the add-in pane again, or the window\u2019s **X**.",
     ]),
-    k.p("The window shows the document\u2019s text, not Word\u2019s page layout: headings, bold, italics, tables and footnote and endnote numbers come through, but page breaks, headers and footers, pictures and Word\u2019s automatic numbering do not. The text of a footnote or endnote appears only while the cursor is in it (see above). Typed numbers appear as usual."),
+    k.p("The window shows the document\u2019s text, not Word\u2019s page layout: headings, bold, italics, tables, Word\u2019s automatic section numbers and letters (see above), and footnote and endnote numbers come through, but page breaks, headers and footers, and images do not. The text of a footnote or endnote appears only while the cursor is in it (see above). Typed numbers appear as usual."),
 
     H1("8. Converting Tracked Changes"),
     k.p("A motion is sometimes prepared in Word with **Track Changes** on, so that its proposed changes appear as Word’s Tracked Changes rather than as struck-through and underlined text. The add-in can’t show amendments to Tracked Changes, so convert them beforehand. After the votes, the result can be converted back into Tracked Changes, for example for the minutes or for whoever prepares the final text. The two buttons for this are in the pane’s **Tracked Changes** section, below Presenter view."),
@@ -638,13 +642,14 @@ function manual() {
       "**A struck paragraph’s section number or letter** is shown with strikeout lines like its words but not shaded. If the document’s **last** paragraph is struck in full and the strike is finally adopted, Word keeps an empty line in its place, without a number.",
       "**Main motion:** the add-in recognizes the main motion\u2019s changes only by their underlining and strikethrough. If the document also uses underlining or strikethrough for something else (for example, an underlined heading or defined term), the add-in treats that text as a Level 1 change too: recording a vote on a neighboring change could remove that underline or, on Failed, delete those words. Avoid underlining or striking through text in the document except to show the main motion\u2019s proposed changes.",
       "**All places** applies to amendments marked with the add-in. For the main motion, select the changes instead (section 5).",
-      "**Presenter view** shows text rather than Word\u2019s page layout, and keeps a thin title bar (section 7).",
+      "**Presenter view** shows text rather than Word\u2019s page layout, and keeps a thin title bar (section 7). Its preview of renumbering doesn\u2019t change cross-references such as \u201csee Section 5.\u201d If the add-in can\u2019t work out Word\u2019s numbering exactly (for example, in a document that still contains Tracked Changes), the window shows Word\u2019s present numbers without previewing how they would change if the pending amendment(s) were adopted.",
       "**Internet needed:** the pane and Presenter view load from the web.",
       "**Tracked Changes conversion** treats all single underlining and strikethrough as proposed changes, and may not convert a change spanning paragraphs cleanly (section 8).",
     ]),
 
-    H1("15. For whoever maintains the add-in"),
-    k.p(`Technical details (hosting, publishing updates, the code and its tests) are in **README.md** in the add-in’s project folder (currently **${PROJECT}** on the developer’s computer). The web files are published at **${SITE}**.`),
+    H1("15. Technical details and license"),
+    k.p(`The complete project, including the code, its tests and other technical files, is publicly available at ${REPO_TEXT}, for example for cybersecurity vetting. Technical details (hosting, publishing updates, the code and its tests) are in its **README.md** file. The add-in may be used under the terms in its **LICENSE.md** file.`),
+    k.p(`The web files that Word runs are published at **${SITE}**. The project’s **check-live.ps1** script confirms that the files published there are the same as those in the project. Questions may be sent to the developer at thomasbalchparliamentarian@gmail.com.`),
   ];
 
   return new Document({

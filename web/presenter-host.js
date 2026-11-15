@@ -173,13 +173,28 @@ const Presenter = (() => {
     await context.sync();
 
     const at = upTo.items.length - 1;
-    const first = upTo.items[Math.max(0, at - CONTEXT)];
-    const last = from.items[Math.min(from.items.length - 1, CONTEXT)];
+    const firstAt = Math.max(0, at - CONTEXT);
+    const first = upTo.items[firstAt];
+    const lastAt = Math.min(from.items.length - 1, CONTEXT);
+    const last = from.items[lastAt];
+    const shown = upTo.items.slice(firstAt).concat(from.items.slice(1, lastAt + 1));
     const ox = first.getRange("Start").expandTo(last.getRange("End")).getOoxml();
     const counts = notes ? notesBefore(context, first) : null;
+    const listed = listsSupported() ? shown.map((p) => {
+      const li = p.listItemOrNullObject;
+      li.load("listString");
+      return li;
+    }) : null;
     await context.sync();
 
-    const view = AmdOoxml.presenterView(ox.value, counts ? { notesBefore: counts() } : {});
+    const total = upTo.items.length + from.items.length - 1;
+    // Up to and including the last paragraph mark: a paragraph's list
+    // setting is on its mark, so without it the last paragraph has no number.
+    const whole = () => upTo.items[0].getRange("Start").expandTo(from.items[from.items.length - 1].getRange("Whole"));
+    const numbers = listed ? await listNumbers(context, listed, firstAt, total, whole) : null;
+    const opts = counts ? { notesBefore: counts() } : {};
+    if (numbers) opts.numbers = numbers;
+    const view = AmdOoxml.presenterView(ox.value, opts);
     return {
       type: "view",
       html: view.html,
@@ -187,6 +202,82 @@ const Presenter = (() => {
       cursor: Math.min(at, CONTEXT),
       cursorText: here.text,
     };
+  }
+
+  // ------------------------------------------------------------ list numbers
+
+  // Word's automatic list numbers need WordApi 1.3 (Paragraph.listItem).
+  const listsSupported = () => Office.context.requirements.isSetSupported("WordApi", "1.3");
+  const RECHECK = 10000; // ms before a mismatch with Word's numbers is worked out again
+
+  // The whole document's numbering, worked out from its OOXML: kept between
+  // refreshes, as reading the whole document is slow, and worked out again
+  // after an add-in action, when the paragraph count changes, or when it no
+  // longer matches the numbers Word shows.
+  let numbering = null; // { total, list, at }
+  let numberingDirty = true;
+
+  // Word's number for each shown paragraph (`listed`, from the paragraph
+  // at body index `firstAt`), with the before/after numbers when the
+  // add-in's arithmetic agrees with Word's for every shown paragraph.
+  // `whole()` is the range from the first paragraph to the last, read the
+  // same way as the shown passage, so its paragraphs line up with Word's.
+  async function listNumbers(context, listed, firstAt, total, whole) {
+    const words = listed.map((li) => (li.isNullObject ? null : li.listString));
+    // A package may end with an extra empty paragraph; the check of every
+    // shown number against Word's catches anything else out of line.
+    const lined = () => numbering && numbering.list.length >= total;
+    const agrees = () => lined() && words.every((w, j) => {
+      const n = numbering.list[firstAt + j];
+      if (w == null || !n) return w == null && !n;
+      return n.word === "•" || n.word === w;
+    });
+    const stale = !numbering || numberingDirty || numbering.total !== total ||
+      (!agrees() && Date.now() - numbering.at > RECHECK);
+    let error = null;
+    if (stale && words.some((w) => w != null)) {
+      try {
+        const ox = whole().getOoxml();
+        await context.sync();
+        numbering = { total, list: AmdOoxml.listNumbers(ox.value), at: Date.now() };
+        numberingDirty = false;
+      } catch (err) {
+        console.warn("Presenter view couldn't work out the list numbers", err);
+        error = String((err && err.message) || err);
+        numbering = null;
+      }
+      noteNumbers(words, firstAt, total, error, agrees());
+    }
+    const aligned = lined();
+    const exact = aligned && agrees();
+    return words.map((w, j) => {
+      if (w == null) return null;
+      const n = aligned ? numbering.list[firstAt + j] : null;
+      const text = n && n.word === "•" ? "•" : w.replace(/[-]/g, "•");
+      if (!n) return { text };
+      const out = { text, status: n.status, level: n.level };
+      if (exact) Object.assign(out, { orig: n.orig, prop: n.prop, cause: n.cause });
+      return out;
+    });
+  }
+
+  // A diagnostic note in the document's add-in settings (read with
+  // test\dump-docx.ps1): how the last working-out of the numbers compared
+  // with Word's.
+  function noteNumbers(words, firstAt, total, error, agreed) {
+    try {
+      const list = numbering ? numbering.list : [];
+      const shown = words.map((w, j) => {
+        const n = list[firstAt + j];
+        return w == null && !n ? null : `${w}|${n ? `${n.word}>${n.prop}${n.status ? ` ${n.status}${n.level}` : ""}` : "-"}`;
+      }).filter(Boolean);
+      const value = { total, worked: numbering ? list.length : null, agreed, error, shown };
+      const settings = Office.context.document.settings;
+      settings.set("amendmentLayersLastNumbers", { at: new Date().toISOString(), value });
+      settings.saveAsync(() => {});
+    } catch (e) {
+      // Diagnostics only.
+    }
   }
 
   // Null if the note holding the cursor can't be found (the main text is
@@ -261,6 +352,7 @@ const Presenter = (() => {
     },
     // Called after every add-in action.
     changed() {
+      numberingDirty = true;
       schedule(50);
     },
   };

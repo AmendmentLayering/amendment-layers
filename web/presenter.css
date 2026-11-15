@@ -36,6 +36,11 @@ html, body {
 /* A quiet bar beside the paragraph being worked on. */
 .p.here { box-shadow: -0.4em 0 0 0 #cfcfcf; }
 
+/* Word's automatic list numbers (Article IV, Section 3., (d)), drawn before
+   the paragraph's text; a number an amendment would change shows old and new. */
+.num { white-space: nowrap; }
+.num-gap { display: inline-block; width: 0.6em; }
+
 /* Footnote and endnote numbers; the note being worked on is highlighted. */
 sup.nref { font-size: 0.6em; line-height: 0; padding: 0 0.08em; }
 sup.nref.cur { background: #ffe58a; border-radius: 0.15em; padding: 0.05em 0.2em; }
