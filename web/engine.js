@@ -1061,9 +1061,13 @@ const Engine = (() => {
           // 1. With tracking off, put each struck or underlined stretch in a
           //    tagged content control, without its strikethrough or underline.
           doc.changeTrackingMode = Word.ChangeTrackingMode.off;
-          const oxs = targets.map((r) => r.getOoxml());
           const isNote = notes.includes(scope);
+          const formatsBefore = isNote || !notes.length ? null : await noteFormats(context, notes);
+          const oxs = targets.map((r) => r.getOoxml());
           const noteBefore = isNote ? scope.getOoxml() : null;
+          // Main text: Word rebuilds the notes referred to in each rewritten
+          // paragraph, so every note's number is checked afterwards too.
+          const notesBefore = isNote ? null : notes.map((b) => b.getOoxml());
           await context.sync();
           const firstN = counter.n;
           targets.forEach((r, i) => {
@@ -1079,6 +1083,17 @@ const Engine = (() => {
             if (noteNumbers(after.value) !== noteNumbers(noteBefore.value)) {
               throw new Error("a footnote's or endnote's number was changed");
             }
+          } else if (notesBefore.length) {
+            const fresh = await noteBodies(context);
+            const notesAfter = fresh.map((b) => b.getOoxml());
+            await context.sync();
+            const lost = fresh.length !== notesBefore.length ||
+              notesAfter.some((x, i) => noteNumbers(x.value) !== noteNumbers(notesBefore[i].value));
+            if (lost) throw new Error("a footnote's or endnote's number was changed");
+            // Word rebuilds those notes without their paragraph formatting
+            // (a footnote fell back from Footnote Text to the main text's
+            // size), so it is put back. Tracking is still off here.
+            await restoreNoteFormats(context, fresh, formatsBefore);
           }
 
           // This scope's controls only (numbered firstN onwards).
@@ -1134,6 +1149,37 @@ const Engine = (() => {
       status(`Converted in ${where}: ${plural(dels, "struck passage")} now tracked deletions, ` +
         `${plural(inss, "underlined passage")} now tracked insertions. Track Changes is on.`);
     });
+  }
+
+  // Each note's paragraphs' style and paragraph formatting.
+  const PARA_FORMAT = ["style", "alignment", "firstLineIndent", "leftIndent", "rightIndent",
+    "lineSpacing", "spaceBefore", "spaceAfter"];
+
+  async function noteFormats(context, bodies) {
+    const lists = bodies.map((b) => b.paragraphs);
+    for (const l of lists) l.load(PARA_FORMAT.map((k) => `items/${k}`).join(","));
+    await context.sync();
+    return lists.map((l) => l.items.map((p) => Object.fromEntries(PARA_FORMAT.map((k) => [k, p[k]]))));
+  }
+
+  // Puts back any note paragraph formatting that differs from `before`
+  // (style first, since setting a style resets the other properties).
+  async function restoreNoteFormats(context, bodies, before) {
+    const now = await noteFormats(context, bodies);
+    const lists = bodies.map((b) => b.paragraphs);
+    for (const l of lists) l.load("items");
+    await context.sync();
+    lists.forEach((l, n) => {
+      const was = before[n];
+      if (!was || was.length !== l.items.length) return;
+      l.items.forEach((p, i) => {
+        const changed = PARA_FORMAT.filter((k) => now[n][i][k] !== was[i][k]);
+        if (!changed.length) return;
+        if (changed.includes("style")) p.style = was[i].style;
+        for (const k of PARA_FORMAT) if (k !== "style") p[k] = was[i][k];
+      });
+    });
+    await context.sync();
   }
 
   // How many note numbers (a note's own reference mark) an OOXML package holds.

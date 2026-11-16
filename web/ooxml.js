@@ -1130,17 +1130,41 @@
       }
     }
     // A footnote's or endnote's own number (at the start of the note) is left
-    // out: Word keeps the note's number when the paragraph is replaced, so a
-    // copy here would show it twice.
+    // out: Word keeps the note's number, and the space after it, when the
+    // paragraph is replaced, so a copy here would show them twice. Only the
+    // rewritten paragraph's own number goes: a main-text paragraph's package
+    // also carries the full text of the notes it refers to, and Word rebuilds
+    // those notes from it, so their numbers must stay (removing them there
+    // left a note without its number or style).
     if (changed) {
+      const body = documentBody(doc);
       for (const tag of ["footnoteRef", "endnoteRef"]) {
-        for (const el of Array.from(doc.getElementsByTagNameNS(W, tag))) {
+        for (const el of Array.from(body.getElementsByTagNameNS(W, tag))) {
           const r = el.parentNode;
-          if (r && r.parentNode) r.parentNode.removeChild(r);
+          if (!r || !r.parentNode) continue;
+          dropLeadingSpace(r);
+          r.parentNode.removeChild(r);
         }
       }
     }
     return changed;
+  }
+
+  // Removes one space from the start of the text that follows run `r` in its
+  // paragraph (the space Word keeps after a note's number).
+  function dropLeadingSpace(r) {
+    let p = r.parentNode;
+    while (p && !(p.namespaceURI === W && p.localName === "p")) p = p.parentNode;
+    const runs = collectRuns(p || r.parentNode, new Set(), new Set());
+    for (const next of runs.slice(runs.indexOf(r) + 1)) {
+      const t = next.getElementsByTagNameNS(W, "t")[0];
+      if (!t) continue;
+      if (t.textContent.startsWith(" ")) {
+        t.textContent = t.textContent.slice(1);
+        if (!t.textContent && !hasVisibleContent(next)) next.parentNode.removeChild(next);
+      }
+      return;
+    }
   }
 
   function run(xml, ownTag, skipTags, fn) {

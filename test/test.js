@@ -786,7 +786,26 @@
     const out = AmdOoxml.markupToTracked(X.serialize(doc), "t-", { n: 1 });
     eq(out.changed, true);
     eq(X.parse(out.xml).getElementsByTagNameNS(X.W, "footnoteRef").length, 0);
-    eq(tcPieces(out.xml), [" Any ", ["t-del-1", "action taken"], " rest."]);
+    // The space after the number goes too: Word keeps it with the number.
+    eq(tcPieces(out.xml), ["Any ", ["t-del-1", "action taken"], " rest."]);
+  });
+
+  test("markup to Track Changes: notes carried in a main-text paragraph's package keep their numbers", () => {
+    // A main-text paragraph's package also holds the notes it refers to;
+    // Word rebuilds them from it, so their numbers must stay.
+    const doc = X.parse(pkg(["Law ", "null and void{-1}", " applies."]));
+    const part = doc.createElementNS(X.PKG, "pkg:part");
+    part.setAttributeNS(X.PKG, "pkg:name", "/word/footnotes.xml");
+    part.innerHTML = `<pkg:xmlData xmlns:pkg="${X.PKG}"><w:footnotes xmlns:w="${X.W}"><w:footnote w:id="2"><w:p>` +
+      `<w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteRef/></w:r>` +
+      `<w:r><w:t xml:space="preserve"> If the assembly is a lawmaking body.</w:t></w:r></w:p></w:footnote></w:footnotes></pkg:xmlData>`;
+    doc.documentElement.appendChild(part);
+    const out = AmdOoxml.markupToTracked(X.serialize(doc), "t-", { n: 1 });
+    eq(out.changed, true);
+    const res = X.parse(out.xml);
+    eq(res.getElementsByTagNameNS(X.W, "footnoteRef").length, 1);
+    eq(res.getElementsByTagNameNS(X.W, "pStyle").length, 1);
+    eq(tcPieces(out.xml), ["Law ", ["t-del-1", "null and void"], " applies."]);
   });
 
   test("markup to Track Changes: Level 2 and 3 formatting is not converted", () => {

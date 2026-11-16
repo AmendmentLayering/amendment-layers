@@ -241,10 +241,18 @@ version 2408 or later.
   only from a paragraph's first marked word to its last, were tried; in
   Word the first silently put back nothing and the pair ended in
   InvalidArgument, so both were dropped.) A note's own number
-  (`footnoteRef`/`endnoteRef`) is left out of the rewritten paragraph,
-  because Word keeps the note's number when the paragraph is replaced and a
-  copy showed it twice; the number of note numbers in the note's OOXML is
-  compared before and after, and a difference stops the conversion. The
+  (`footnoteRef`/`endnoteRef`) and the space after it are left out of the
+  rewritten note paragraph, because Word keeps both when the paragraph is
+  replaced and a copy showed them twice; the number of note numbers in the
+  note's OOXML is compared before and after, and a difference stops the
+  conversion. A rewritten *main-text* paragraph's package also carries the
+  full text of every note it refers to, and Word rebuilds those notes from
+  it: their numbers must therefore stay in the package (removing them there
+  left a note without its number), every note's number is checked after the
+  main text is rewritten, and because Word rebuilds such a note without its
+  paragraph formatting (a footnote fell back from Footnote Text to the main
+  text's size), each note's paragraph style, alignment, indents and spacing
+  are recorded beforehand and put back where they changed. The
   controls are removed with tracking off (removed with tracking on, Word
   kept them as a tracked change, and later parts processed them again), and
   each part handles only the controls it numbered. With nothing selected, the notes are converted
@@ -255,7 +263,10 @@ version 2408 or later.
   footnote into a tracked deletion and stopped before the endnote). Checked
   with Word COM: with the note's own changes tracked first, rejecting every
   story's revisions restores the note as it was, and accepting removes it.
-  The add-in itself has not yet been retested in Word.
+  Tested in Word on 2026-11-16 with two footnotes and an endnote (whole
+  document and selections inside a note, both directions, a strike covering
+  a note's number, and refusal while an amendment is pending): all passed
+  after the two fixes above.
 - **List numbers in Presenter view** (`listNumbers` in `ooxml.js`, used by
   `presenter-host.js`). Office.js gives each paragraph's displayed number
   (`listItemOrNullObject.listString`, WordApi 1.3) but not what it would
@@ -282,8 +293,8 @@ version 2408 or later.
   That button turns Track Changes off even when there is nothing to
   convert, and works while amendments are pending (on purpose: staff can
   catch up on a document that arrived with Tracked Changes mid-debate).
-  Both directions were tested in Word on the main text; the footnote and
-  endnote coverage was added afterwards and needs its own test.
+  Both directions were tested in Word on the main text and, on 2026-11-16,
+  in footnotes and endnotes.
 
 ## Tests
 

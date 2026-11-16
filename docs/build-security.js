@@ -13,7 +13,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { Document, Packer, Paragraph, TextRun, AlignmentType } = require("docx");
+const { Document, Packer, Paragraph, TextRun, AlignmentType, Footer, PageNumber } = require("docx");
 
 const TITLE = "Cybersecurity Vetting of the Amendment Layers Word Add-in";
 const REPO = "https://github.com/AmendmentLayering/amendment-layers";
@@ -98,14 +98,26 @@ function word() {
       } else if (p.quote) {
         children.push(new Paragraph({ spacing: { after: 120 }, indent: { left: 720, right: 720 }, children: runs(p.quote, { italics: true }) }));
       } else {
-        children.push(new Paragraph({ spacing: { after: 120 }, children: runs(p) }));
+        // A paragraph ending in a colon introduces what follows: keep them on one page.
+        children.push(new Paragraph({ keepNext: /:\**$/.test(p), spacing: { after: 120 }, children: runs(p) }));
       }
     }
   }
   return new Document({
     creator: "Amendment Layers",
     title: TITLE,
-    sections: [{ properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } }, children }],
+    sections: [{
+      properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun({ font: FONT, size: 20, children: ["Page ", PageNumber.CURRENT, " of ", PageNumber.TOTAL_PAGES] })],
+          })],
+        }),
+      },
+      children,
+    }],
   });
 }
 
